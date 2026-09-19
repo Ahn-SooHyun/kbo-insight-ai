@@ -216,3 +216,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- KBO Insight AI 데이터 및 로그 관리 ---
+
+# 원본 데이터
+/data/raw/**
+!/data/raw/hf_kbo_pbp/
+!/data/raw/hf_kbo_pbp/.gitkeep
+
+# 중간 처리 데이터
+/data/interim/**
+!/data/interim/.gitkeep
+
+# 최종 가공 데이터
+/data/processed/**
+!/data/processed/.gitkeep
+
+# 외부 보조 데이터
+/data/external/**
+!/data/external/.gitkeep
+
+# 실행 로그
+/logs/**
+!/logs/.gitkeep
