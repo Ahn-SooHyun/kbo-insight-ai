@@ -15,7 +15,8 @@ Raw 데이터는 원본 상태를 유지하며, 전처리 또는 Feature Enginee
 
 Hugging Face에서 제공되는 KBO Play-by-Play 원본 데이터를 저장할 위치다.
 
-실제 데이터 다운로드 기능은 이후 Issue에서 구현한다.
+원본 데이터는 `scripts/download_hf_kbo_pbp.py`를 사용하여 다운로드하며,
+다운로드한 Dataset revision과 파일 metadata는 `download_manifest.csv`에 기록한다.
 
 ### `data/interim/`
 
