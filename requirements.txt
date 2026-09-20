@@ -1,3 +1,4 @@
-﻿datasets
+datasets
+huggingface_hub
 pandas
 pyarrow
