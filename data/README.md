@@ -25,6 +25,40 @@ Raw 데이터에서 생성된 중간 처리 결과를 저장한다.
 데이터 정제, 변환, 정규화 등 중간 단계의 결과는 Raw 데이터를 수정하지 않고
 이 디렉터리에 별도로 저장한다.
 
+### `data/interim/hf_kbo_pbp/`
+
+Hugging Face KBO Play-by-Play Raw Dataset의 검증 결과를 저장한다.
+
+검증은 다음 명령으로 실행한다.
+
+```bash
+python scripts/validate_hf_kbo_pbp.py
+```
+
+검증 결과는 다음 두 파일로 생성된다.
+
+- `validation_report.csv`
+  - 시즌별 파일 존재 및 로드 여부
+  - row/column 수
+  - `game_date` 시즌 일치 여부
+  - 완전 중복 및 Pitch Key 중복
+  - Critical column 결측
+  - 주요 Pitch Tracking 컬럼 결측률
+  - unique game/batter/pitcher 수
+  - PASS/WARN/FAIL 상태
+- `schema_report.csv`
+  - 시즌별 실제 전체 컬럼
+  - dtype
+  - non-null/null 수
+  - null rate
+  - unique 수
+  - sample value
+
+검증 과정에서는 `data/raw/hf_kbo_pbp/`의 원본 파일을 수정하지 않는다.
+
+`validation_report.csv`와 `schema_report.csv`는 실행 시 현재 Raw snapshot을
+기준으로 다시 생성하며 append하지 않는다.
+
 ### `data/processed/`
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
