@@ -1357,6 +1357,234 @@ source game_date < prediction game_date
 이용 가능 순서를 증명할 정보가 없는 한 `game_pk` 등의 임의 정렬을 이용해
 앞선 경기를 이미 종료된 Historical Source로 간주하지 않는다.
 
+#### Player Metadata 파생 테이블
+
+Canonical Plate Appearance, Player Game Batting, Player Game Pitching에
+등장하는 Batter/Pitcher ID를 하나의 Canonical Player Entity로 통합한다.
+
+생성은 다음 명령으로 실행한다.
+
+```bash
+python scripts/build_players.py
+```
+
+기본 입력은 다음 세 파일이다.
+
+```text
+data/interim/hf_kbo_pbp/derived/plate_appearances.parquet
+data/interim/hf_kbo_pbp/derived/player_game_batting.parquet
+data/interim/hf_kbo_pbp/derived/player_game_pitching.parquet
+```
+
+출력 파일은 다음 위치에 생성된다.
+
+```text
+data/interim/hf_kbo_pbp/derived/players.parquet
+```
+
+Player Metadata Grain은 다음과 같다.
+
+```text
+player_id
+```
+
+`player_id`는 pandas `string`으로 유지한다.
+
+Player ID를 정수로 변환하지 않으므로 Leading Zero가 존재하는 ID도
+문자열 의미를 유지한다.
+
+null, 빈 문자열, 공백만 있는 Player ID는 허용하지 않는다.
+
+Player Metadata의 Key 집합은 다음 Source에서 관측된 유효 Player ID의
+합집합과 정확히 일치해야 한다.
+
+```text
+Plate Appearance.batter
+Plate Appearance.pitcher
+Player Game Batting.batter
+Player Game Pitching.pitcher
+```
+
+Plate Appearance는 미완료 PA도 Player 관측에 포함한다.
+
+따라서 Player Metadata 생성 과정에서는 PA의 `event` 존재 여부로
+Batter/Pitcher를 필터링하지 않는다.
+
+Player Game Pitching은 Raw Pitch에 실제 등장한 Pitcher를 기반으로 생성되므로,
+PA를 완료하지 못한 중간 교체 Pitcher도 Player Metadata에 포함될 수 있다.
+
+Player Role은 전체 관측 이력의 합집합으로 계산한다.
+
+```text
+is_batter
+= 어떤 Canonical Source에서든 Batter로 한 번 이상 관측
+
+is_pitcher
+= 어떤 Canonical Source에서든 Pitcher로 한 번 이상 관측
+```
+
+따라서 다음 세 형태가 모두 가능하다.
+
+```text
+is_batter=True,  is_pitcher=False
+is_batter=False, is_pitcher=True
+is_batter=True,  is_pitcher=True
+```
+
+두 Role이 모두 False인 Player Row는 생성하지 않는다.
+
+이름은 Source에서 null일 수 있다.
+
+Player ID가 유효하면 이름이 null이어도 Player Entity 자체는 유지한다.
+
+Name 정규화에서는 leading/trailing whitespace만 제거한다.
+
+내부 공백, 한글/영문 표기, 개명 여부 등을 추정하여 자동 수정하거나
+서로 다른 Name Variant를 임의로 병합하지 않는다.
+
+빈 문자열 또는 공백만 있는 Name은 valid Name Variant로 사용하지 않는다.
+
+`name_variants`는 같은 `player_id`에서 관측된 모든 distinct non-null Name을
+숨기지 않고 보존한다.
+
+Parquet round-trip과 결정성을 단순하게 유지하기 위해
+정렬된 UTF-8 JSON Array 문자열을 사용한다.
+
+예:
+
+```text
+["김민수"]
+["김민수", "김민수(개명전)"]
+[]
+```
+
+정책은 다음과 같다.
+
+```text
+unique
+deterministic lexical sort
+ensure_ascii=False
+valid Name이 없으면 []
+dtype = string
+```
+
+동일 사실이 Plate Appearance와 Player Game 양쪽에 중복될 수 있으므로,
+Source Row 수 자체를 Name 빈도 가중치로 사용하지 않는다.
+
+최소 다음 사실 단위로 중복을 제거한 뒤 Name Metadata를 계산한다.
+
+```text
+player_id
+game_pk
+game_date
+season
+role
+player_name
+```
+
+`display_name`은 다음 규칙으로 결정한다.
+
+1. valid non-null Name Observation만 사용한다.
+2. 가장 최근 `game_date`에 관측된 Name을 우선한다.
+3. 가장 최근 날짜에 Variant가 하나면 해당 Name을 사용한다.
+4. 같은 가장 최근 날짜에 여러 Variant가 있으면
+   lexicographical ascending 첫 값을 사용한다.
+5. valid Name이 없으면 `<NA>`로 유지한다.
+
+따라서 Source 종류나 중복 Row 수가 `display_name`을 결정하지 않는다.
+
+Player 관측 기간은 세 Canonical Input 전체에서 계산한다.
+
+```text
+first_seen_date = min(game_date)
+last_seen_date  = max(game_date)
+```
+
+두 Date 컬럼은 timezone 없는 다음 dtype으로 정규화한다.
+
+```text
+datetime64[us]
+```
+
+모든 Player에서 다음 조건을 만족해야 한다.
+
+```text
+first_seen_date <= last_seen_date
+```
+
+`first_seen_season`과 `last_seen_season`은 Player 전체 Season의
+단순 min/max가 아니다.
+
+각각 `first_seen_date`, `last_seen_date`에 실제 연결된 Observation의
+Season을 사용한다.
+
+같은 Player의 같은 boundary date에 서로 다른 Season이 관측되면
+Source Context Conflict로 처리하여 생성을 실패시킨다.
+
+최종 dtype 계약은 다음과 같다.
+
+```text
+player_id             string
+display_name          string
+name_variants         string
+is_batter             boolean
+is_pitcher            boolean
+first_seen_date       datetime64[us]
+last_seen_date        datetime64[us]
+first_seen_season     Int64
+last_seen_season      Int64
+```
+
+`display_name`은 nullable string이다.
+
+`name_variants`는 null 대신 항상 유효한 JSON Array 문자열을 가진다.
+
+최종 Output은 `player_id` ascending 순서로 안정 정렬한다.
+
+입력 Row 순서가 바뀌거나 동일 Snapshot에서 Builder를 다시 실행해도
+값, Row 순서, dtype, `name_variants` JSON 순서는 동일해야 한다.
+
+Byte-level Parquet Hash 동일성까지 요구하지 않는다.
+
+Player Metadata에는 다음과 같은 단일 Team 속성을 저장하지 않는다.
+
+```text
+team
+current_team
+latest_team
+first_team
+last_team
+```
+
+선수는 시즌 중 Trade가 가능하며 Historical Team 관계가 시간에 따라
+변할 수 있기 때문이다.
+
+Player-Team 관계가 필요한 경우 다음 Event-time Fact Table에서
+해당 시점의 관계를 조회한다.
+
+```text
+plate_appearances.parquet
+player_game_batting.parquet
+player_game_pitching.parquet
+```
+
+Player Master는 안정적인 Player ID, Name, Role, 관측 기간만 담당한다.
+
+Player Metadata 생성 과정에서는 세 Canonical Input을 수정하거나
+덮어쓰지 않는다.
+
+Output 경로를 `data/raw/` 내부에 지정할 수 없으며,
+다음 세 Input 경로와 동일하게 지정할 수도 없다.
+
+```text
+plate_appearances.parquet
+player_game_batting.parquet
+player_game_pitching.parquet
+```
+
+Parquet은 모든 Build/Validation을 통과한 뒤 임시 파일에 기록하고,
+round-trip 검증 후 최종 경로로 원자적으로 교체한다.
+
 ### `data/processed/`
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
