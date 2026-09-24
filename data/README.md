@@ -403,6 +403,401 @@ source game_date < prediction game_date
 같은 날짜의 경기 순서를 실제 이용 가능 시점으로 증명할 별도 정보가 없는 한
 해당 날짜의 다른 경기를 Pregame Historical Source로 사용하지 않는다.
 
+#### Player Game Batting 파생 테이블
+
+Canonical Plate Appearance를 기반으로 선수-경기 단위의
+Post-game 타격 Fact Table을 생성한다.
+
+생성은 다음 명령으로 실행한다.
+
+```bash
+python scripts/build_player_game_batting.py
+```
+
+기본 입력은 다음 Canonical Plate Appearance다.
+
+```text
+data/interim/hf_kbo_pbp/derived/plate_appearances.parquet
+```
+
+출력 파일은 다음 위치에 생성된다.
+
+```text
+data/interim/hf_kbo_pbp/derived/player_game_batting.parquet
+```
+
+Player Game Batting Grain은 다음과 같다.
+
+```text
+(game_pk, batter)
+```
+
+공식식 타격 집계에는 Canonical Plate Appearance 중
+다음 조건을 만족하는 완료 PA만 사용한다.
+
+```text
+event IS NOT NULL
+```
+
+`event`가 null인 미완료 PA는 OUT 등 다른 결과로 보정하지 않으며,
+`pa`에도 포함하지 않는다.
+
+특정 `(game_pk, batter)`에 완료 PA가 하나도 없으면
+해당 Player Game Row를 별도로 생성하지 않는다.
+
+선수 귀속은 Canonical Plate Appearance의 `batter`,
+`batter_name`을 Source of Truth로 그대로 사용한다.
+
+따라서 PA 도중 Batter 교체 및 2 Strike 상태의
+Strikeout 귀속 규칙을 이 단계에서 Raw Pitch로 돌아가
+다시 계산하지 않는다.
+
+Player Game의 팀 Context는 다음과 같다.
+
+```text
+team = batting_team
+opponent = fielding_team
+is_home = is_home_batting
+```
+
+동일한 `(game_pk, batter)` 안에서는 다음 Context가
+하나의 값으로 일관되어야 한다.
+
+```text
+game_date
+season
+batter_name
+team
+opponent
+is_home
+```
+
+Context가 충돌하면 첫 값이나 마지막 값을 임의로 선택하지 않고
+Player Game Batting 생성을 실패시킨다.
+
+`batter`, `team`, `opponent`에는 null 또는 빈 문자열을 허용하지 않으며,
+`team == opponent`인 Row도 허용하지 않는다.
+
+같은 선수가 다른 경기에서 다른 Team으로 기록되는 것은
+Trade 등의 상황이 있을 수 있으므로 허용한다.
+
+완료 PA의 `event`는 다음 15개 값만 허용한다.
+
+```text
+single
+double
+triple
+home_run
+walk
+hit_by_pitch
+strikeout
+field_out
+double_play
+triple_play
+sac_bunt
+sac_fly
+field_error
+fielders_choice
+catcher_interference
+```
+
+지원하지 않는 non-null Event를 OTHER나 OUT으로 합치지 않고
+Player Game Batting 생성을 실패시킨다.
+
+Output Event Count Mapping은 다음과 같다.
+
+```text
+single                -> single
+double                -> double
+triple                -> triple
+home_run               -> hr
+walk                   -> bb
+hit_by_pitch           -> hbp
+strikeout              -> so
+sac_fly                -> sf
+sac_bunt               -> sh
+double_play            -> double_play
+triple_play            -> triple_play
+field_error            -> field_error
+fielders_choice        -> fielders_choice
+catcher_interference   -> catcher_interference
+```
+
+`field_out`은 별도 Output 컬럼을 생성하지 않지만
+`pa`와 `ab`에는 정상적으로 포함한다.
+
+Player Game의 `pa`는 완료 PA 수다.
+
+Hit 수는 다음 공식으로 계산한다.
+
+```text
+h = single + double + triple + hr
+```
+
+At Bat에서 제외되는 Event는 다음과 같다.
+
+```text
+walk
+hit_by_pitch
+sac_bunt
+sac_fly
+catcher_interference
+```
+
+따라서 AB는 다음 공식으로 계산한다.
+
+```text
+ab
+= pa
+- bb
+- hbp
+- sh
+- sf
+- catcher_interference
+```
+
+Total Bases는 다음 공식으로 계산한다.
+
+```text
+tb
+= 1 * single
++ 2 * double
++ 3 * triple
++ 4 * hr
+```
+
+Rate Stat은 다음 공식으로 계산하고
+각 결과를 소수점 셋째 자리까지 반올림한다.
+
+```text
+avg = h / ab
+
+obp
+= (h + bb + hbp)
+  / (ab + bb + hbp + sf)
+
+slg = tb / ab
+
+ops = obp + slg
+```
+
+`catcher_interference`는 AB에서는 제외하지만
+OBP denominator에는 포함하지 않는다.
+
+0 Denominator를 임의로 0으로 대체하지 않는다.
+
+```text
+AB = 0:
+    AVG = <NA>
+    SLG = <NA>
+
+OBP denominator = 0:
+    OBP = <NA>
+
+OPS:
+    OBP와 SLG가 모두 정의된 경우에만 계산
+    하나라도 정의되지 않으면 <NA>
+```
+
+예를 들어 Walk만 존재하는 Player Game은 `AB = 0`이므로
+`AVG`와 `SLG`는 정의되지 않지만,
+OBP denominator가 존재하므로 `OBP`는 계산할 수 있다.
+
+다만 `SLG`가 정의되지 않으므로 해당 Row의 `OPS`는 `<NA>`로 유지한다.
+
+Player Game Batting에서는 다음 값을 생성하지 않는다.
+
+```text
+rbi
+runs
+batter_runs
+```
+
+Canonical PA의 `runs_scored`는 해당 PA 전체에서 발생한 득점 수이며,
+해당 Batter의 RBI나 Batter 본인의 득점을 직접 의미하지 않는다.
+
+따라서 `runs_scored`의 이름만 변경하여
+RBI 또는 Batter Runs로 사용하지 않는다.
+
+Player Game Batting 생성 후 다음 Grain을 검증한다.
+
+```text
+(game_pk, batter) Duplicate = 0
+```
+
+완료 PA 전체에 대해서는 다음 관계를 검증한다.
+
+```text
+sum(player_game_batting.pa)
+=
+Canonical PA의 event IS NOT NULL Row 수
+```
+
+가능한 경우 경기별로도 완료 PA 수의 동일성을 검증한다.
+
+Player Game Output의 각 Event Count 합계는
+Canonical PA의 Event Cross-tab과 일치해야 한다.
+
+별도 Output 컬럼이 없는 `field_out`을 포함하여
+15개 Event 전체의 합은 `pa`와 일치해야 한다.
+
+각 Player Game Row에서는 다음 공식도 다시 검증한다.
+
+```text
+h
+= single
++ double
++ triple
++ hr
+
+ab
+= pa
+- bb
+- hbp
+- sh
+- sf
+- catcher_interference
+
+tb
+= single
++ 2 * double
++ 3 * triple
++ 4 * hr
+```
+
+최종 Output 컬럼은 다음과 같다.
+
+```text
+game_pk
+game_date
+season
+batter
+batter_name
+team
+opponent
+is_home
+pa
+ab
+h
+single
+double
+triple
+hr
+bb
+hbp
+so
+sf
+sh
+tb
+double_play
+triple_play
+field_error
+fielders_choice
+catcher_interference
+avg
+obp
+slg
+ops
+```
+
+최종 Output은 다음 순서로 결정적으로 정렬한다.
+
+```text
+season
+game_date
+game_pk
+batter
+```
+
+Input Canonical PA의 Row 순서가 달라져도
+동일한 값, Row 순서 및 dtype의 Output을 생성할 수 있어야 한다.
+
+Byte-level Parquet hash의 동일성은 요구하지 않는다.
+
+주요 Output dtype은 다음 원칙으로 정규화한다.
+
+- `game_pk`
+  - pandas `string`
+- `game_date`
+  - timezone이 없는 pandas datetime
+  - Parquet round-trip 기준 `datetime64[us]`
+- `season`
+  - pandas nullable `Int64`
+- `batter`, `batter_name`
+  - pandas `string`
+- `team`, `opponent`
+  - pandas `string`
+- `is_home`
+  - pandas nullable `boolean`
+- `pa`, `ab`, `h`
+  - pandas nullable `Int64`
+- `single`, `double`, `triple`, `hr`
+  - pandas nullable `Int64`
+- `bb`, `hbp`, `so`, `sf`, `sh`
+  - pandas nullable `Int64`
+- `tb`
+  - pandas nullable `Int64`
+- `double_play`, `triple_play`
+  - pandas nullable `Int64`
+- `field_error`, `fielders_choice`, `catcher_interference`
+  - pandas nullable `Int64`
+- `avg`, `obp`, `slg`, `ops`
+  - pandas nullable `Float64`
+
+Player ID인 `batter`는 숫자처럼 보이더라도
+문자열 의미를 유지한다.
+
+Player Game Batting 생성 과정에서는
+입력 `plate_appearances.parquet`을 수정하거나 덮어쓰지 않는다.
+
+CLI에서 Output 경로를 변경하는 경우에도
+`data/raw/` 내부에 Derived Output을 생성하지 않는다.
+
+또한 Output 경로를 입력
+`plate_appearances.parquet`과 동일하게 지정하는 것을 허용하지 않는다.
+
+Parquet은 임시 파일에 먼저 저장한 뒤
+모든 생성 및 검증이 성공한 경우 최종 Output 경로로 교체한다.
+
+`player_game_batting.parquet`은 해당 경기 종료 이후에 확정되는
+Canonical Post-game Fact Table이다.
+
+따라서 해당 경기의 다음과 같은 값을
+그 경기의 Pregame Feature로 직접 사용하면 Data Leakage가 발생한다.
+
+- `pa`
+- `ab`
+- `h`
+- `single`
+- `double`
+- `triple`
+- `hr`
+- `bb`
+- `hbp`
+- `so`
+- `sf`
+- `sh`
+- `tb`
+- `avg`
+- `obp`
+- `slg`
+- `ops`
+
+향후 Historical Pregame Feature를 생성할 때는
+기본적으로 다음 시간 조건을 지켜야 한다.
+
+```text
+source game_date < prediction game_date
+```
+
+특히 같은 날짜에 열린 경기나 Doubleheader를
+`game_pk` 등의 임의 순서로 정렬한 뒤
+앞선 경기 결과를 이미 이용 가능한 과거 정보로 간주하지 않는다.
+
+같은 날짜의 경기 순서를 실제 이용 가능 시점으로 증명할
+별도 정보가 없는 한, 해당 날짜의 다른 Player Game 결과를
+현재 경기의 Pregame Historical Source로 사용하지 않는다.
+
 ### `data/processed/`
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
