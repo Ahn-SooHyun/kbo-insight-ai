@@ -1585,6 +1585,428 @@ player_game_pitching.parquet
 Parquet은 모든 Build/Validation을 통과한 뒤 임시 파일에 기록하고,
 round-trip 검증 후 최종 경로로 원자적으로 교체한다.
 
+#### Player / Team Season Snapshot 파생 테이블
+
+Player Game Batting, Player Game Pitching, Team Game Canonical Fact Table을
+현재 Dataset Snapshot 기준의 Season 누적 단위로 집계한다.
+
+생성은 다음 명령으로 실행한다.
+
+```bash
+python scripts/build_season_snapshots.py
+```
+
+기본 입력은 다음 세 파일이다.
+
+```text
+data/interim/hf_kbo_pbp/derived/player_game_batting.parquet
+data/interim/hf_kbo_pbp/derived/player_game_pitching.parquet
+data/interim/hf_kbo_pbp/derived/team_games.parquet
+```
+
+출력은 다음 세 파일이다.
+
+```text
+data/interim/hf_kbo_pbp/derived/player_season_batting_snapshot.parquet
+data/interim/hf_kbo_pbp/derived/player_season_pitching_snapshot.parquet
+data/interim/hf_kbo_pbp/derived/team_season_snapshot.parquet
+```
+
+각 Snapshot의 Grain은 다음과 같다.
+
+```text
+Player Season Batting:
+(season, batter)
+
+Player Season Pitching:
+(season, pitcher)
+
+Team Season:
+(season, team)
+```
+
+각 Key는 Output 안에서 반드시 Unique하다.
+
+이 세 테이블은 공식 최종 시즌 기록이 아니라
+현재 Canonical Dataset에 포함된 경기까지의 누적 Snapshot이다.
+
+특히 2026처럼 진행 중인 시즌은 현재 Dataset에 존재하는 경기까지만 집계한다.
+
+```text
+Snapshot != Final Season Record
+```
+
+시즌 완료 여부를 추론하거나 다음과 같은 값을 생성하지 않는다.
+
+```text
+season_complete
+final_record
+final_rank
+projected_final_record
+```
+
+세 Snapshot은 공통으로 `through_date`를 가진다.
+
+`through_date`는 특정 Player의 마지막 출장일이 아니라
+해당 Season에서 현재 Dataset Snapshot이 어디까지 관측되었는지를 나타내는
+시즌 공통 Coverage 날짜다.
+
+Source of Truth는 `team_games.parquet`이며 다음처럼 계산한다.
+
+```text
+through_date(season)
+=
+max(team_games.game_date for that season)
+```
+
+따라서 같은 Season의 다음 세 Snapshot에서 모든 Row는 동일한
+`through_date`를 가져야 한다.
+
+```text
+player_season_batting_snapshot
+player_season_pitching_snapshot
+team_season_snapshot
+```
+
+`through_date` dtype은 다음과 같다.
+
+```text
+datetime64[us]
+```
+
+Player Game Batting의 모든 Season은 Team Game Coverage에 존재해야 하며,
+어떤 Player Game Batting의 `game_date`도 해당 Season의
+`through_date`보다 늦을 수 없다.
+
+Player Game Pitching에도 같은 규칙을 적용한다.
+
+Player Season Batting은 경기별 Rate를 평균하지 않는다.
+
+다음 Count를 먼저 `(season, batter)`까지 합산한다.
+
+```text
+pa
+single
+double
+triple
+hr
+bb
+hbp
+so
+sf
+sh
+double_play
+triple_play
+field_error
+fielders_choice
+catcher_interference
+```
+
+그 뒤 다음 값을 Season Count에서 다시 계산한다.
+
+```text
+h
+=
+single
++ double
++ triple
++ hr
+
+ab
+=
+pa
+- bb
+- hbp
+- sh
+- sf
+- catcher_interference
+
+tb
+=
+single
++ 2 * double
++ 3 * triple
++ 4 * hr
+```
+
+Rate는 Aggregate Count에서 다시 계산한다.
+
+```text
+avg = h / ab
+
+obp
+=
+(h + bb + hbp)
+/
+(ab + bb + hbp + sf)
+
+slg = tb / ab
+
+ops = obp + slg
+```
+
+Player Game Batting과 동일하게 Rate는 소수점 셋째 자리까지 반올림한다.
+
+0 denominator는 임의로 0으로 바꾸지 않고 nullable로 유지한다.
+
+```text
+ab = 0
+→ avg = <NA>
+→ slg = <NA>
+
+obp denominator = 0
+→ obp = <NA>
+
+obp 또는 slg 중 하나라도 <NA>
+→ ops = <NA>
+```
+
+경기별 다음 Rate 컬럼을 Season Rate의 입력으로 사용하지 않는다.
+
+```text
+avg
+obp
+slg
+ops
+```
+
+즉 다음 방식은 허용하지 않는다.
+
+```text
+season_avg = mean(game_avg)
+season_obp = mean(game_obp)
+season_slg = mean(game_slg)
+season_ops = mean(game_ops)
+```
+
+Player Season Pitching은 다음 Count를 `(season, pitcher)`까지 합산한다.
+
+```text
+pitch_rows
+pitches
+batters_faced_completed
+single_allowed
+double_allowed
+triple_allowed
+hr_allowed
+bb_allowed
+hbp_allowed
+so
+sf
+sh
+ball_pitch_count
+strike_pitch_count
+in_play_pitch_count
+```
+
+`hits_allowed`는 다음 공식에서 다시 계산한다.
+
+```text
+hits_allowed
+=
+single_allowed
++ double_allowed
++ triple_allowed
++ hr_allowed
+```
+
+다음 Pitch Type 공식도 유지한다.
+
+```text
+pitches
+=
+ball_pitch_count
++ strike_pitch_count
++ in_play_pitch_count
+```
+
+`outs_recorded`는 Player Game Pitching의 nullable 불확실성 계약을
+Season에서도 보존한다.
+
+같은 `(season, pitcher)`의 모든 Player Game `outs_recorded`가
+non-null이면 정확한 정수 합계를 저장한다.
+
+```text
+모든 Player Game outs_recorded가 non-null
+→ Season outs_recorded = 정확한 합계
+```
+
+한 경기라도 `outs_recorded = <NA>`이면 Season 값도 `<NA>`다.
+
+```text
+Player Game 중 하나라도 outs_recorded = <NA>
+→ Season outs_recorded = <NA>
+```
+
+따라서 다음 방식은 허용하지 않는다.
+
+```text
+<NA>를 0으로 대체
+
+pandas 기본 sum(skipna=True)의 부분 합계를
+공식 Season Outs처럼 사용
+
+불확실한 outs_recorded에서
+innings_pitched / IP / ERA 생성
+```
+
+Player Season Pitching Snapshot에서는 다음 컬럼을 생성하지 않는다.
+
+```text
+innings_pitched
+ip
+earned_runs
+era
+runs_allowed
+```
+
+Player Game Pitching의 `avg_release_speed_kmh`도
+Season Snapshot에서는 재집계하지 않는다.
+
+현재 Player Game 데이터에는 경기 평균 구속은 있지만
+Season 평균 구속을 정확히 재계산하기 위한
+유효 구속 관측 Pitch 수 denominator가 명시되어 있지 않기 때문이다.
+
+따라서 다음 방식은 사용하지 않는다.
+
+```text
+mean(game_avg_release_speed_kmh)
+
+weighted_mean(
+    game_avg_release_speed_kmh,
+    pitches
+)
+```
+
+Team Season Snapshot은 각 `(season, team)`에서 다음을 집계한다.
+
+```text
+games = Team Game Row 수
+wins = sum(win)
+losses = sum(loss)
+ties = sum(tie)
+runs_for = sum(runs_for)
+runs_against = sum(runs_against)
+run_diff = runs_for - runs_against
+```
+
+반드시 다음 관계를 만족해야 한다.
+
+```text
+games
+=
+wins
++ losses
++ ties
+```
+
+또한 시즌 전체에서 Team Game의 양 팀 대칭성을 이용해 다음을 검증한다.
+
+```text
+sum(wins) = sum(losses)
+
+sum(runs_for) = sum(runs_against)
+
+sum(team_snapshot.games)
+=
+len(team_games)
+
+sum(team_snapshot.games)
+=
+2 * unique game_pk count
+```
+
+무승부 경기에서는 양 팀 Row 모두 `tie=True`이므로
+시즌 전체 `sum(ties)`는 무승부 경기 수의 2배가 된다.
+
+Player Season Batting/Pitching Snapshot에는 다음과 같은
+단일 Team 속성을 저장하지 않는다.
+
+```text
+team
+current_team
+latest_team
+first_team
+last_team
+```
+
+선수는 Season 도중 Trade될 수 있으므로 단일 Team을 Player Season의
+영구 속성처럼 저장하면 Historical Team 관계를 잘못 표현할 수 있다.
+
+Player-Team 관계가 필요하면 해당 시점의 Event-time Fact Table을 사용한다.
+
+```text
+player_game_batting.parquet
+player_game_pitching.parquet
+team_games.parquet
+```
+
+Season Snapshot은 Post-game Fact를 Season 전체까지 누적한 요약이다.
+
+따라서 Historical Pregame Feature로 직접 사용하면 Data Leakage가 발생한다.
+
+예를 들어 다음 사용은 허용하지 않는다.
+
+```text
+2025-05-01 경기 예측
+← 현재 Dataset의 2025 Season Snapshot 전체 사용
+```
+
+향후 Historical Pregame Feature는 Event-time Fact Table에서
+기본적으로 다음 조건을 만족하는 Row만 사용해
+Rolling 또는 Expanding 방식으로 생성해야 한다.
+
+```text
+source game_date < prediction game_date
+```
+
+같은 날짜의 경기 또는 Doubleheader는 실제 경기 시작·종료 순서를
+증명할 수 있는 정보가 없는 한 같은 날짜의 다른 경기 결과를
+과거 정보로 사용하지 않는다.
+
+최종 Snapshot Output은 다음 순서로 안정 정렬한다.
+
+```text
+Player Season Batting:
+season, batter
+
+Player Season Pitching:
+season, pitcher
+
+Team Season:
+season, team
+```
+
+Input Row 순서가 달라져도 동일한 값, Row 순서, dtype을 생성해야 한다.
+
+Byte-level Parquet Hash 동일성까지 요구하지 않는다.
+
+Season Snapshot Builder는 세 Canonical Input을 수정하거나 덮어쓰지 않는다.
+
+```text
+player_game_batting.parquet
+player_game_pitching.parquet
+team_games.parquet
+```
+
+Output을 `data/raw/` 내부에 생성할 수 없으며,
+세 Snapshot Output끼리 같은 경로를 사용할 수도 없다.
+
+세 Snapshot DataFrame의 Build와 Validation이 모두 완료된 뒤에만
+Parquet 저장 단계로 진입한다.
+
+각 Output은 다음 순서로 저장한다.
+
+```text
+temporary parquet write
+→ read_parquet round-trip
+→ dtype 및 내용 검증
+→ final path atomic replace
+```
+
+Builder 실행 전후에는 세 Canonical Input의 SHA256을 비교해
+Input 불변성을 검증한다.
+
 ### `data/processed/`
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
