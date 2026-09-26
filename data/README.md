@@ -2007,6 +2007,150 @@ temporary parquet write
 Builder 실행 전후에는 세 Canonical Input의 SHA256을 비교해
 Input 불변성을 검증한다.
 
+#### Canonical Derived Layer 통합 검증
+
+Canonical Derived Layer 전체 계약은 다음 명령으로 검증한다.
+
+```bash
+python scripts/validate_derived_tables.py
+```
+
+검증 Script는 기존 Raw 및 Derived Artifact를 읽기만 하며
+Derived Table을 재생성하거나 Raw/Derived Parquet을 수정·덮어쓰지 않는다.
+
+검증 대상 Canonical Derived Table은 다음 9개다.
+
+```text
+plate_appearances.parquet
+games.parquet
+team_games.parquet
+player_game_batting.parquet
+player_game_pitching.parquet
+players.parquet
+player_season_batting_snapshot.parquet
+player_season_pitching_snapshot.parquet
+team_season_snapshot.parquet
+```
+
+전체 계약 흐름은 다음과 같다.
+
+```text
+Raw Pitch
+→ Plate Appearance
+→ Game / Team Game
+→ Player Game Batting / Pitching
+→ Player Metadata
+→ Player / Team Season Snapshot
+```
+
+통합 검증에서는 각 Builder의 개별 Unit Test를 넘어
+Source 간 다음 계약을 교차 확인한다.
+
+```text
+File 존재 여부
+Column 순서 및 dtype
+Grain Key Unique
+
+Raw PA Key ↔ Plate Appearance
+Raw Game Key ↔ Games
+
+Games ↔ Team Games Home/Away Mirror
+
+Plate Appearance 마지막 Row ↔ Game Final Score
+첫 Pre-score + runs_scored ↔ Game Final Score
+
+Completed PA ↔ Player Game Batting
+Batting Event Cross-tab
+H / AB / TB 및 Rate 공식
+
+Raw Pitch Row / 실제 Pitch / B/S/X
+↔ Player Game Pitching
+
+Completed PA ↔ Pitcher BF
+Allowed Event ↔ Player Game Pitching
+
+Multi-pitcher PA의 nullable outs_recorded 정책
+Player Game Pitching ↔ Player Season Pitching Null 전파
+
+Canonical Player ID Union ↔ Player Metadata
+Batter / Pitcher Role Coverage
+
+Team Games ↔ Team Season Snapshot
+
+시즌 공통 through_date
+2026 Partial Snapshot
+
+Canonical Content Fingerprint
+Raw / Derived SHA256 실행 전후 불변성
+data/interim Git Ignore 정책
+```
+
+Raw 검증에서는 시즌별 Parquet에서 필요한 Column만 읽어
+PA/Game/Pitcher 단위 Summary를 계산한다.
+
+Production Row Count를 외부 고정값으로 사용하지 않고
+항상 현재 Raw 또는 Upstream Canonical Table에서 기대값을 다시 계산한다.
+
+특히 다음과 같은 Snapshot 진단값은 Assertion Truth로 하드코딩하지 않는다.
+
+```text
+특정 Raw Row Count
+특정 Plate Appearance Count
+특정 Game Count
+특정 Player Count
+nullable Pitching Player-Season 개수
+특정 2026 through_date
+```
+
+Player Game Pitching의 `outs_recorded`는
+Multi-pitcher Plate Appearance에서 공개 Raw만으로
+Out 발생 시점을 안전하게 투수별 귀속할 수 없는 경우 `<NA>`를 유지한다.
+
+따라서 Integration Validation에서도 다음 처리를 하지 않는다.
+
+```text
+<NA> → 0
+skipna=True 부분 합계를 공식 Outs로 사용
+모든 PA Out Delta를 마지막 Pitcher에게 무조건 귀속
+```
+
+Season Pitching Snapshot도 같은 불확실성을 전파한다.
+
+```text
+Player-Season의 모든 Player Game outs_recorded가 non-null
+→ Season outs_recorded = 정확한 합계
+
+Player Game 중 하나라도 outs_recorded = <NA>
+→ Season outs_recorded = <NA>
+```
+
+`through_date`는 Player의 마지막 출장일이 아니라
+해당 Season에서 Canonical Dataset이 관측된 공통 Coverage 날짜다.
+
+```text
+through_date
+=
+max(team_games.game_date by season)
+```
+
+따라서 2026을 완료 시즌으로 가정하거나
+특정 날짜를 고정 Assertion으로 사용하지 않는다.
+
+DataFrame Content 결정성은 각 Table을 Canonical Grain Key로
+안정 정렬한 뒤 Column 순서와 dtype을 포함한 Content Fingerprint로 진단한다.
+
+Parquet 파일의 Byte Hash는 Content Determinism의 영구 ID로 사용하지 않는다.
+Parquet SHA256은 Validation 실행 전후 파일이 변경되지 않았는지 확인하는
+Read-only 안전성 검증에 사용한다.
+
+Canonical Derived Artifact는 다음 Git Ignore 정책 아래에 있다.
+
+```text
+/data/interim/**
+```
+
+Integration Validator는 어떤 Output 파일도 생성하지 않는다.
+
 ### `data/processed/`
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
