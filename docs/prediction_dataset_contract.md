@@ -7,6 +7,7 @@
 > 기준 Issue: `#22 docs(data): 예측 시점·타깃·시간 분할 계약 정의`
 >
 > 적용 범위:
+>
 > - Issue #22에서는 M1, M2, M3 계약을 확정한다.
 > - Expanded CT-2의 M4/M5 계약은 각각 #31/#30에서 이 문서에 같은 형식으로 추가한다.
 > - 이 문서는 Dataset 계약 문서이며 ML 모델 학습, 알고리즘 선택, Hyperparameter Tuning, 최종 성능 평가는 다루지 않는다.
@@ -71,19 +72,19 @@ Raw와 Canonical Derived Artifact는 Prediction Dataset 생성 과정에서 수�
 
 ### 2.2 책임 분리
 
-| 범위 | 책임 |
-|---|---|
-| #22 | M1/M2/M3 Prediction Contract, Feature Availability, Split 계약 |
-| #23 | 팀 Pregame Historical Feature |
-| #24 | 선수 Pregame Historical Feature |
-| #25 | M1 Model-ready Dataset 및 공통 Processed utility |
-| #26 | M2 Model-ready Dataset |
-| #27 | M3 Model-ready Dataset |
-| #29 | 외부 보강 데이터 수집·정규화 |
-| #30 | M5 계약·Feature Catalog 확장 및 M5 Dataset |
-| #31 | M4 계약·Feature Catalog 확장 및 M4 Dataset |
-| #28 | M1~M5 Expanded CT-2 통합 검증과 종료 Gate |
-| CT-3 | 모델 학습, 성능 비교, Tuning, 최종 Test 평가 |
+| 범위 | 책임                                                           |
+| ---- | -------------------------------------------------------------- |
+| #22  | M1/M2/M3 Prediction Contract, Feature Availability, Split 계약 |
+| #23  | 팀 Pregame Historical Feature                                  |
+| #24  | 선수 Pregame Historical Feature                                |
+| #25  | M1 Model-ready Dataset 및 공통 Processed utility               |
+| #26  | M2 Model-ready Dataset                                         |
+| #27  | M3 Model-ready Dataset                                         |
+| #29  | 외부 보강 데이터 수집·정규화                                   |
+| #30  | M5 계약·Feature Catalog 확장 및 M5 Dataset                     |
+| #31  | M4 계약·Feature Catalog 확장 및 M4 Dataset                     |
+| #28  | M1~M5 Expanded CT-2 통합 검증과 종료 Gate                      |
+| CT-3 | 모델 학습, 성능 비교, Tuning, 최종 Test 평가                   |
 
 #22에서 M4/M5의 상세 계약을 추정해서 미리 고정하지 않는다.
 
@@ -159,12 +160,12 @@ split_version = "season_split_v1"
 
 CT-2의 기본 고정 시간 분할은 다음과 같다.
 
-| Season / Prediction Date | Split | 용도 |
-|---|---|---|
-| 2023 | `train` | CT-3 학습 |
-| 2024 | `validation` | CT-3 모델/Feature/Hyperparameter 선택 |
-| 2025 | `test` | CT-3 최종 평가 전용 |
-| 2026 | `snapshot` | 진행 시즌 snapshot / inference / 추후 명시적 추가 검증 후보 |
+| Season / Prediction Date | Split        | 용도                                                        |
+| ------------------------ | ------------ | ----------------------------------------------------------- |
+| 2023                     | `train`      | CT-3 학습                                                   |
+| 2024                     | `validation` | CT-3 모델/Feature/Hyperparameter 선택                       |
+| 2025                     | `test`       | CT-3 최종 평가 전용                                         |
+| 2026                     | `snapshot`   | 진행 시즌 snapshot / inference / 추후 명시적 추가 검증 후보 |
 
 달력 경계로 표현하면 다음과 같다.
 
@@ -472,11 +473,11 @@ home_result ∈ {"loss", "tie", "win"}
 
 고정 Class 순서와 Code:
 
-| class | code |
-|---|---:|
-| `loss` | 0 |
-| `tie` | 1 |
-| `win` | 2 |
+| class  | code |
+| ------ | ---: |
+| `loss` |    0 |
+| `tie`  |    1 |
+| `win`  |    2 |
 
 Mapping:
 
@@ -509,12 +510,12 @@ target_eligible
 
 권장 Quality 의미:
 
-| 상태 | 의미 |
-|---|---|
-| `verified_canonical` | Canonical key/score/reconciliation을 통과한 관측 결과 |
+| 상태                             | 의미                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `verified_canonical`             | Canonical key/score/reconciliation을 통과한 관측 결과                         |
 | `warning_terminal_pa_incomplete` | 마지막 관측 PA가 미완료일 수 있으나 그 사실만으로 경기 미완료를 단정하지 않음 |
-| `invalid_missing_score` | Target에 필요한 observed terminal score 결측 |
-| `invalid_reconciliation` | Canonical score reconciliation 위반 |
+| `invalid_missing_score`          | Target에 필요한 observed terminal score 결측                                  |
+| `invalid_reconciliation`         | Canonical score reconciliation 위반                                           |
 
 `warning_terminal_pa_incomplete`는 자동 Target 폐기 사유가 아니다.
 
@@ -651,23 +652,23 @@ catcher_interference
 
 고정 11-class Mapping:
 
-| source event | target class | code |
-|---|---|---:|
-| `single` | `1B` | 0 |
-| `double` | `2B` | 1 |
-| `triple` | `3B` | 2 |
-| `home_run` | `HR` | 3 |
-| `walk` | `BB` | 4 |
-| `hit_by_pitch` | `HBP` | 5 |
-| `strikeout` | `SO` | 6 |
-| `field_out` | `OUT` | 7 |
-| `double_play` | `OUT` | 7 |
-| `triple_play` | `OUT` | 7 |
-| `sac_bunt` | `OUT` | 7 |
-| `sac_fly` | `OUT` | 7 |
-| `field_error` | `ROE` | 8 |
-| `fielders_choice` | `FC` | 9 |
-| `catcher_interference` | `CI` | 10 |
+| source event           | target class | code |
+| ---------------------- | ------------ | ---: |
+| `single`               | `1B`         |    0 |
+| `double`               | `2B`         |    1 |
+| `triple`               | `3B`         |    2 |
+| `home_run`             | `HR`         |    3 |
+| `walk`                 | `BB`         |    4 |
+| `hit_by_pitch`         | `HBP`        |    5 |
+| `strikeout`            | `SO`         |    6 |
+| `field_out`            | `OUT`        |    7 |
+| `double_play`          | `OUT`        |    7 |
+| `triple_play`          | `OUT`        |    7 |
+| `sac_bunt`             | `OUT`        |    7 |
+| `sac_fly`              | `OUT`        |    7 |
+| `field_error`          | `ROE`        |    8 |
+| `fielders_choice`      | `FC`         |    9 |
+| `catcher_interference` | `CI`         |   10 |
 
 고정 Class 순서:
 
@@ -824,11 +825,11 @@ Trade 전후에도 동일 `player_id`의 개인 이력은 연결한다.
 
 고정 Horizon:
 
-| horizon_id | label_start | label_end_exclusive |
-|---|---|---|
-| `7d` | `t` | `t + 7 days` |
-| `28d` | `t` | `t + 28 days` |
-| `rest_of_season` | `t` | 검증된 `season_end_exclusive` |
+| horizon_id       | label_start | label_end_exclusive           |
+| ---------------- | ----------- | ----------------------------- |
+| `7d`             | `t`         | `t + 7 days`                  |
+| `28d`            | `t`         | `t + 28 days`                 |
+| `rest_of_season` | `t`         | 검증된 `season_end_exclusive` |
 
 고정 순서:
 
@@ -852,6 +853,23 @@ Half-open interval:
 종료 경계 날짜의 관측은 포함하지 않는다.
 
 시즌 말이라는 이유로 interval을 임의로 단축하지 않는다.
+
+M3 v1의 `7d`, `28d`, `rest_of_season` Target은 **KBO 정규시즌 성적만** 대상으로 한다.
+포스트시즌 성적은 M3 v1 Target에 포함하지 않는다.
+
+검증된 정규시즌 종료일과 해당 시즌의 정규시즌 전체 coverage 근거가 모두 확인된
+완료 시즌에서는 `7d` 또는 `28d` label interval이 정규시즌 종료일 이후까지
+이어지더라도 원래 `[t, t+7d)`, `[t, t+28d)` 경계를 유지한다.
+
+정규시즌 종료 이후 구간은 추가 정규시즌 경기가 존재하지 않는 것으로 검증된
+무경기 구간이므로, 위 두 근거가 모두 확인된 경우 해당 interval의
+`coverage_status = complete`를 판정할 수 있다. 이는 interval을
+`season_end_exclusive`로 잘라 짧은 Horizon으로 바꾸는 것과 다르다.
+
+반대로 정규시즌 종료일 또는 전체 정규시즌 coverage를 검증할 수 없는 시즌에는
+이 규칙을 적용하지 않는다. 특히 진행 중인 2026 partial snapshot의
+`through_date` 또는 단순 `max(observed game_date)`만으로 이후 무경기 구간을
+`complete`라고 추정하지 않는다.
 
 ### 9.6.2 rest_of_season
 
