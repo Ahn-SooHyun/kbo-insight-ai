@@ -1930,7 +1930,7 @@ first_team
 last_team
 ```
 
-선수는 Season 도중 Trade가 가능하므로 단일 Team을 Player Season의
+선수는 Season 도중 Trade될 수 있으므로 단일 Team을 Player Season의
 영구 속성처럼 저장하면 Historical Team 관계를 잘못 표현할 수 있다.
 
 Player-Team 관계가 필요하면 해당 시점의 Event-time Fact Table을 사용한다.
@@ -2155,12 +2155,6 @@ Integration Validator는 어떤 Output 파일도 생성하지 않는다.
 
 모델 학습 및 분석에 사용할 최종 가공 데이터를 저장한다.
 
-#### Prediction-time Feature / Processed Dataset 계약`부터 끝까지\*\*를 그대로 삽입한다.
-
-> 이 파일은 기존 `data/README.md` 전체를 대체하지 않는다. 기존 Canonical/Derived 상세 설명을 삭제하지 않고 아래 섹션만 추가한다.
-
----
-
 #### Prediction-time Feature / Processed Dataset 계약
 
 Canonical Derived Layer는 관측 사실을 보존하는 Post-event/Post-game Fact Layer이며, 그 자체가 Prediction-time Feature를 의미하지 않는다.
@@ -2358,7 +2352,7 @@ rest_of_season  = [t, season_end_exclusive)
 
 `calendar_month` Horizon은 생성하지 않는다.
 
-M3 v1의 `7d`, `28d`, `rest_of_season` Target은 **KBO 정규시즌 성적만** 대상으로 하며
+M3 v1의 `7d`, `28d`, `rest_of_season` Target은 **KBO 정규시즌 성적만** 대상으로 하며,
 포스트시즌 성적은 포함하지 않는다.
 
 검증된 정규시즌 종료일과 해당 시즌의 정규시즌 전체 coverage 근거가 모두 확인된
