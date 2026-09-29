@@ -2636,4 +2636,3 @@ M4/M5는 각각 #31/#30 구현 시 `docs/prediction_dataset_contract.md`와 `doc
 - 데이터의 출처와 재현성을 관리할 수 있도록 향후 provenance 정보를 기록한다.
 - provenance에는 출처, URL, 다운로드 시각, Dataset revision, 시즌, 파일 정보,
   SHA256, License 등의 정보를 포함할 수 있다.
-  ss
