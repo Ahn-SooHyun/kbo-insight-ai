@@ -2267,6 +2267,108 @@ Manifest에는 입력 경로/SHA256, Feature/Source Contract Version, Rolling Wi
 
 현재 경기의 `runs_for`, `runs_against`, `win`, `loss`, `tie`는 Output X에 직접 포함하지 않는다. Key/Audit와 모델 X는 명시적으로 분리하며 `all columns except y` 방식으로 학습 입력을 만들지 않는다.
 
+##### M1 Model-ready Dataset (#25)
+
+`games.parquet`의 경기 단위 Context/Target과 #23 `team_pregame_features.parquet`를 Home/Away 방향으로 결합해 M1 학습·평가 단계가 소비할 수 있는 Processed Dataset을 만든다.
+
+입력:
+
+```text
+data/interim/hf_kbo_pbp/derived/games.parquet
+data/interim/hf_kbo_pbp/derived/plate_appearances.parquet  # observation quality 재대사에만 사용
+data/processed/hf_kbo_pbp/features/team_pregame_features.parquet
+data/processed/hf_kbo_pbp/features/team_pregame_features.manifest.json
+configs/processed_dataset.json
+```
+
+출력:
+
+```text
+data/processed/hf_kbo_pbp/m1/game_dataset.parquet
+data/processed/hf_kbo_pbp/m1/game_dataset.manifest.json
+data/processed/hf_kbo_pbp/m1/game_dataset.schema.json
+data/processed/hf_kbo_pbp/m1/game_dataset.quality.json
+```
+
+Grain:
+
+```text
+game_pk당 1행
+```
+
+실행:
+
+```bash
+python scripts/build_m1_dataset.py
+```
+
+기본 실행은 Canonical `plate_appearances.parquet`의 마지막 관측 PA를 제한적으로 다시 확인해 observed terminal score reconciliation과 terminal PA warning을 Quality Audit에 남긴다. 이 재대사를 생략해야 할 때만 `--skip-pa-audit`를 사용한다. 공식 경기 status는 현재 Source에 없으므로 `official_status_verified=false`로 기록하며, 그 사실만으로 Target을 폐기하지 않는다.
+
+Target은 current-main #22 계약을 그대로 사용한다.
+
+```text
+home_runs = games.final_home_score
+away_runs = games.final_away_score
+
+loss = 0
+tie  = 1
+win  = 2
+```
+
+여기서 `final_*_score`는 KBO 공식 종료 결과가 아니라 Canonical **observed terminal score**다. 필수 Score 결측이나 실제 Score/Result reconciliation 오류는 `is_excluded=true`와 primary `exclusion_reason`으로 추적하고 학습 Target은 null 처리한다. 마지막 관측 PA가 미완료라는 사실만 있는 경우에는 `warning_terminal_pa_incomplete`로 남기되 자동 제외하지 않는다.
+
+#23 Team Feature는 다시 계산하지 않는다. Manifest의 `(game_pk, team)` Grain, Audit Column, `x_columns`, `feature_version`, `source_contract_version`, Row Count를 검증한 뒤 각 경기에 대해 Home Feature와 Away Feature가 정확히 하나씩 존재하는지 확인한다. `team`, `opponent`, `prediction_date`, `season`, `is_home` Context가 `games`와 다르면 실패하며 Join으로 Row가 증식하면 실패한다.
+
+M1 Feature Set은 current-main Feature Catalog의 `extended_v1`을 사용한다. #23 Manifest의 Team Historical `x_columns`를 다음 prefix로 분리하고, Catalog가 baseline X로 허용한 `home_has_history`/`away_has_history`를 포함한다.
+
+```text
+home_<team_feature>
+away_<team_feature>
+home_has_history
+away_has_history
+```
+
+또한 Catalog에 명시된 최소 Difference만 생성한다.
+
+```text
+diff_hist_win_pct
+diff_hist_runs_for_per_game
+diff_hist_runs_against_per_game
+diff_hist_run_diff_per_game
+```
+
+각 Difference는 `home_* - away_*`이며 nullable 의미를 그대로 보존한다. 임의의 Difference나 Team ID는 X에 자동 추가하지 않는다.
+
+Key/Audit/Target/Split/Quality/Control/Label Status는 X와 논리적으로 분리한다. 현재 경기 Final Score·승패·이닝·PA/Pitch Count·실제 출장 정보·terminal 상태·observation quality·split·exclusion/censor/purge/label 상태는 X에 포함할 수 없다. Dataset 소비자는 `X = all columns except y` 방식 대신 Schema/Manifest의 명시적 `x_columns`를 사용해야 한다.
+
+시간 Split은 고정 `season_split_v1`을 사용한다.
+
+```text
+2023 -> train
+2024 -> validation
+2025 -> test
+2026 -> snapshot
+```
+
+Random Split이나 Test 결과를 본 뒤 경계를 바꾸는 방식은 사용하지 않는다. M1 Label availability는 날짜 단위 보수적 계약에 따라 `label_available_at = game_date + 1 calendar day`로 기록하며 실제 경기 종료 시각을 의미하지 않는다.
+
+Schema Artifact는 다음 역할을 명시적으로 구분한다.
+
+```text
+key_columns
+audit_columns
+x_columns
+y_columns
+split_columns
+quality_columns
+control_columns
+label_status_columns
+```
+
+Manifest는 입력 경로와 SHA256, 가능한 입력 revision, code revision, 계약/Feature/Target/Split/Schema version, 설정, Prediction 범위, Source coverage, Row/Null/Quality/Exclusion 요약, Output Content Fingerprint를 기록한다. `created_at`과 `run_id` 같은 실행 metadata는 결정적 `deterministic_identity.fingerprint`와 분리한다. Dataset/Schema/Quality Report의 round-trip 및 입력 hash 불변성 검증이 끝난 뒤 `run_status=complete` Manifest를 마지막에 기록한다.
+
+`Model-ready`는 X/y/split/schema 계약이 고정되어 후속 ML 단계가 소비할 수 있다는 뜻이다. 학습형 Imputation, Scaling, Encoding, Feature Selection, 모델 학습, 성능 비교, Calibration, Backtesting은 #25 범위에 포함하지 않는다.
+
 ##### 시간 Split
 
 고정 Split Version:

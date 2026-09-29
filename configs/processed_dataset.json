@@ -1,0 +1,65 @@
+{
+  "prediction_contract_version": "prediction_dataset_contract_v1",
+  "feature_catalog_version": "feature_catalog_v1",
+  "m1": {
+    "dataset_version": "m1_game_dataset_v1",
+    "feature_version": "extended_v1",
+    "target_version": "m1_target_v1",
+    "split_version": "season_split_v1",
+    "output_schema_version": "m1_game_dataset_schema_v1",
+    "target_semantics": "canonical_observed_terminal",
+    "timestamp_resolution": "date",
+    "home_result_classes": [
+      {
+        "class": "loss",
+        "code": 0
+      },
+      {
+        "class": "tie",
+        "code": 1
+      },
+      {
+        "class": "win",
+        "code": 2
+      }
+    ],
+    "difference_features": [
+      "diff_hist_win_pct",
+      "diff_hist_runs_for_per_game",
+      "diff_hist_runs_against_per_game",
+      "diff_hist_run_diff_per_game"
+    ],
+    "split_ranges": [
+      {
+        "name": "train",
+        "start": "2023-01-01",
+        "end_exclusive": "2024-01-01"
+      },
+      {
+        "name": "validation",
+        "start": "2024-01-01",
+        "end_exclusive": "2025-01-01"
+      },
+      {
+        "name": "test",
+        "start": "2025-01-01",
+        "end_exclusive": "2026-01-01"
+      },
+      {
+        "name": "snapshot",
+        "start": "2026-01-01",
+        "end_exclusive": "2027-01-01"
+      }
+    ],
+    "paths": {
+      "games": "data/interim/hf_kbo_pbp/derived/games.parquet",
+      "plate_appearances": "data/interim/hf_kbo_pbp/derived/plate_appearances.parquet",
+      "team_features": "data/processed/hf_kbo_pbp/features/team_pregame_features.parquet",
+      "team_feature_manifest": "data/processed/hf_kbo_pbp/features/team_pregame_features.manifest.json",
+      "output": "data/processed/hf_kbo_pbp/m1/game_dataset.parquet",
+      "manifest": "data/processed/hf_kbo_pbp/m1/game_dataset.manifest.json",
+      "schema": "data/processed/hf_kbo_pbp/m1/game_dataset.schema.json",
+      "quality_report": "data/processed/hf_kbo_pbp/m1/game_dataset.quality.json"
+    }
+  }
+}
