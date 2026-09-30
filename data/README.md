@@ -2267,6 +2267,93 @@ Manifest에는 입력 경로/SHA256, Feature/Source Contract Version, Rolling Wi
 
 현재 경기의 `runs_for`, `runs_against`, `win`, `loss`, `tie`는 Output X에 직접 포함하지 않는다. Key/Audit와 모델 X는 명시적으로 분리하며 `all columns except y` 방식으로 학습 입력을 만들지 않는다.
 
+##### Player Pregame Historical Feature (#24)
+
+`player_game_batting.parquet`, `player_game_pitching.parquet`의 선수-경기 단위 Post-game Fact를 요청된 예측 시점 이전의 Player Historical Feature로 변환한다.
+
+Request와 Historical Source는 분리한다. Builder가 미래 출장 여부나 `players.parquet`의 전체 기간 role을 보고 요청 Population을 자동 생성하지 않는다.
+
+Request Grain:
+
+```text
+(player_id, role, prediction_date)
+```
+
+필수 Request 컬럼:
+
+```text
+player_id        string
+role             string  # batting | pitching
+prediction_date  date
+```
+
+중복 Request는 오류로 처리한다. 유효 Request는 History가 없어도 삭제하지 않으며 정확히 1행의 Output으로 보존한다.
+
+입력 Historical Source:
+
+```text
+data/interim/hf_kbo_pbp/derived/player_game_batting.parquet
+data/interim/hf_kbo_pbp/derived/player_game_pitching.parquet
+```
+
+기본 출력:
+
+```text
+data/processed/hf_kbo_pbp/features/player_pregame_features.parquet
+data/processed/hf_kbo_pbp/features/player_pregame_features.manifest.json
+```
+
+실행 시 Request 파일을 반드시 명시한다.
+
+```bash
+python scripts/build_player_features.py \
+  --requests-path /path/to/player_feature_requests.parquet
+```
+
+모든 Historical Source는 다음 cutoff를 만족해야 한다.
+
+```text
+source.game_date < prediction_date
+```
+
+날짜보다 세밀한 이용 가능 시각이 없으므로 `prediction_date` 당일 경기와 Same-day/Doubleheader 결과는 전부 제외한다. `game_pk` 또는 Row 순서를 경기 선후의 근거로 사용하지 않는다.
+
+Season Expanding은 `prediction_date.year`의 해당 Season에서 초기화한다. Canonical Source의 `season`과 `game_date` 연도가 다르면 계약 오류로 실패한다.
+
+Batting은 `docs/feature_catalog.md`의 `hist_pa`, `hist_ab`, `hist_h`, 안타 유형, BB/HBP/SO/SF/SH/TB 및 특수 Event Count를 누적한다. `hist_avg`, `hist_obp`, `hist_slg`는 경기별 Rate 평균이 아니라 누적 Count에서 다시 계산하고 소수점 셋째 자리까지 반올림한다. `hist_ops`는 이렇게 계산된 OBP와 SLG를 더한 뒤 다시 소수점 셋째 자리까지 반올림한다. 분모가 0인 Rate는 `null`이다.
+
+Pitching은 `hist_pitch_rows`와 `hist_pitches`를 구분하고 completed BF, 피안타 유형, BB/HBP/SO/SF/SH, B/S/X Pitch Count를 누적한다. Source History에 `outs_recorded = null`인 Player Game이 하나라도 있으면 누적 `hist_outs_recorded`도 `null`이다. `history_uncertain_outs_game_count`에 불확실 Player Game 수를 Audit로 남긴다.
+
+현재 Player Game Source에는 경기 평균 구속을 다시 정확히 가중할 유효 구속 관측 수 denominator가 없으므로 `hist_avg_release_speed_kmh`를 생성하지 않는다. ERA, earned runs, 공식 runs allowed, RBI도 생성하지 않는다.
+
+Rolling Window는 타격/투구 모두 최근 `5/10/20` Player Game을 사용한다.
+
+```text
+last_5g_<stat>
+last_10g_<stat>
+last_20g_<stat>
+```
+
+Window 경계가 같은 날짜 경기 묶음에 걸리면 해당 날짜 전체를 포함한다. 따라서 실제 Window 크기는 정확히 5/10/20이 아닐 수 있으며 `last_5g_games`, `last_10g_games`, `last_20g_games`에 실제 포함 Player Game 수를 기록한다. Pitching Window의 불확실 outs 수는 `last_*g_uncertain_outs_game_count`로 별도 Audit한다.
+
+Cold Start 정책:
+
+```text
+count feature = 0
+rate feature = null
+has_history = false
+history_game_count = 0
+max_source_game_date = null
+```
+
+`days_since_last_observed_appearance`는 Prediction Date보다 이전에 실제 관측된 해당 Role의 가장 최근 Player Game 날짜와의 차이다. 부상, 엔트리 상태, 감독 의사, 실제 availability를 의미하지 않는다.
+
+Output의 Role별 Historical Feature와 Key/Audit 컬럼은 명시적으로 구분한다. M2/M3 소비자는 `docs/feature_catalog.md`의 `baseline_v1` 또는 `extended_v1` allowlist를 사용하며 `X = all columns except y` 방식으로 Feature를 선택하지 않는다.
+
+Manifest에는 Request 경로/SHA256/Content Fingerprint, Batting/Pitching 입력 경로와 SHA256, 계약/Feature Version, cutoff, Season 초기화, Rolling Window, Grain, Role별 Feature 계약, Output Schema, Role별 Row 수, Cold Start 수, Null Summary, 결정적 Output Content Fingerprint를 기록한다. 실행 시각은 Content Fingerprint와 분리한다.
+
+Builder는 입력 파일 SHA256을 실행 전후 비교하며 입력을 수정하지 않는다. Output/Manifest는 입력 경로와 충돌할 수 없고 `data/raw/`, `data/interim/` 아래에 쓸 수 없다. Parquet은 원자적 저장 후 round-trip Schema/Content Fingerprint 검증을 수행하고 완료 Manifest를 마지막에 기록한다.
+
 ##### M1 Model-ready Dataset (#25)
 
 `games.parquet`의 경기 단위 Context/Target과 #23 `team_pregame_features.parquet`를 Home/Away 방향으로 결합해 M1 학습·평가 단계가 소비할 수 있는 Processed Dataset을 만든다.
