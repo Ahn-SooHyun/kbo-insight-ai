@@ -1292,6 +1292,125 @@ def _build_player_features(
     return result
 
 
+def _build_player_feature_provenance(
+    frame: pd.DataFrame,
+) -> dict[str, object]:
+    """M2에 실제 결합된 #24 Player Feature 요청 집합의 결정적 provenance를 계산한다."""
+    batter_columns = [
+        "starting_batter",
+        "game_date",
+        "batter_max_source_game_date",
+        "batter_history_game_count",
+        *BATTER_X_COLUMNS,
+    ]
+    pitcher_columns = [
+        "starting_pitcher",
+        "game_date",
+        "pitcher_max_source_game_date",
+        "pitcher_history_game_count",
+        *PITCHER_X_COLUMNS,
+    ]
+
+    batter_requests = (
+        frame.loc[
+            :,
+            batter_columns,
+        ]
+        .drop_duplicates()
+        .sort_values(
+            [
+                "game_date",
+                "starting_batter",
+            ],
+            kind="mergesort",
+        )
+        .reset_index(drop=True)
+    )
+
+    pitcher_requests = (
+        frame.loc[
+            :,
+            pitcher_columns,
+        ]
+        .drop_duplicates()
+        .sort_values(
+            [
+                "game_date",
+                "starting_pitcher",
+            ],
+            kind="mergesort",
+        )
+        .reset_index(drop=True)
+    )
+
+    batter_duplicate_keys = (
+        batter_requests
+        .duplicated(
+            subset=[
+                "starting_batter",
+                "game_date",
+            ],
+            keep=False,
+        )
+    )
+    if batter_duplicate_keys.any():
+        raise M2DatasetBuildError(
+            "동일 Batter Player Feature Request Key에 서로 다른 Feature 값이 있습니다."
+        )
+
+    pitcher_duplicate_keys = (
+        pitcher_requests
+        .duplicated(
+            subset=[
+                "starting_pitcher",
+                "game_date",
+            ],
+            keep=False,
+        )
+    )
+    if pitcher_duplicate_keys.any():
+        raise M2DatasetBuildError(
+            "동일 Pitcher Player Feature Request Key에 서로 다른 Feature 값이 있습니다."
+        )
+
+    batter_fingerprint = content_fingerprint(
+        batter_requests,
+        sort_columns=[
+            "game_date",
+            "starting_batter",
+        ],
+    )
+    pitcher_fingerprint = content_fingerprint(
+        pitcher_requests,
+        sort_columns=[
+            "game_date",
+            "starting_pitcher",
+        ],
+    )
+
+    payload: dict[str, object] = {
+        "feature_version": PLAYER_FEATURE_VERSION,
+        "request_count": int(
+            len(batter_requests)
+            + len(pitcher_requests)
+        ),
+        "batting_request_count": int(
+            len(batter_requests)
+        ),
+        "pitching_request_count": int(
+            len(pitcher_requests)
+        ),
+        "batting_content_fingerprint": batter_fingerprint,
+        "pitching_content_fingerprint": pitcher_fingerprint,
+    }
+
+    payload["content_fingerprint"] = stable_json_fingerprint(
+        payload
+    )
+
+    return payload
+
+
 def _validate_config(
     config: Mapping[str, object],
 ) -> tuple[
@@ -1572,6 +1691,34 @@ def build_m2_dataset(
         .astype("datetime64[us]")
     )
 
+    game_date_counts = (
+        base.groupby(
+            "game_pk",
+            sort=False,
+            dropna=False,
+        )["prediction_date"]
+        .nunique(
+            dropna=False
+        )
+    )
+    inconsistent_game_dates = (
+        game_date_counts.loc[
+            game_date_counts.ne(1)
+        ]
+    )
+    if not inconsistent_game_dates.empty:
+        sample = (
+            inconsistent_game_dates
+            .head(10)
+            .index
+            .astype(str)
+            .tolist()
+        )
+        raise M2DatasetBuildError(
+            "동일 game_pk에 서로 다른 prediction_date가 있습니다: "
+            f"sample={sample}"
+        )
+
     label_available = pd.Series(
         pd.array(
             [pd.NaT] * len(base),
@@ -1648,6 +1795,34 @@ def build_m2_dataset(
         )
     except ProcessedContractError as exc:
         raise _wrap_contract_error(exc) from exc
+
+    game_split_counts = (
+        base.groupby(
+            "game_pk",
+            sort=False,
+            dropna=False,
+        )["split"]
+        .nunique(
+            dropna=False
+        )
+    )
+    inconsistent_game_splits = (
+        game_split_counts.loc[
+            game_split_counts.ne(1)
+        ]
+    )
+    if not inconsistent_game_splits.empty:
+        sample = (
+            inconsistent_game_splits
+            .head(10)
+            .index
+            .astype(str)
+            .tolist()
+        )
+        raise M2DatasetBuildError(
+            "동일 game_pk의 PA가 서로 다른 Split에 배정되었습니다: "
+            f"sample={sample}"
+        )
 
     partial_start = (
         base["start_context_quality"]
@@ -1836,6 +2011,11 @@ def build_m2_dataset(
     summary = build_quality_summary(
         result
     )
+    summary["player_feature_provenance"] = (
+        _build_player_feature_provenance(
+            result
+        )
+    )
 
     return (
         result,
@@ -1871,10 +2051,143 @@ def _value_counts(
     return result
 
 
+def _build_event_mapping_reconciliation(
+    dataset: pd.DataFrame,
+) -> dict[str, dict[str, object]]:
+    """Source Event별 Target Mapping과 Row 상태 수량을 결정적으로 대사한다."""
+    reconciliation: dict[
+        str,
+        dict[str, object],
+    ] = {}
+
+    reconciled_total = 0
+
+    for source_event in (
+        *EVENT_TO_CLASS.keys(),
+        "<NULL>",
+    ):
+        if source_event == "<NULL>":
+            mask = (
+                dataset["source_event"]
+                .isna()
+            )
+            expected_target: str | None = None
+            expected_code: int | None = None
+        else:
+            mask = (
+                dataset["source_event"]
+                .eq(source_event)
+                .fillna(False)
+            )
+            expected_target = EVENT_TO_CLASS[
+                source_event
+            ]
+            expected_code = TARGET_CODES[
+                expected_target
+            ]
+
+        rows = dataset.loc[
+            mask
+        ]
+
+        input_rows = int(
+            len(rows)
+        )
+        supervised = int(
+            rows["supervised_usable"]
+            .fillna(False)
+            .sum()
+        )
+        pending = int(
+            rows["is_censored"]
+            .fillna(False)
+            .sum()
+        )
+        excluded = int(
+            rows["is_excluded"]
+            .fillna(False)
+            .sum()
+        )
+
+        reconciled_rows = (
+            supervised
+            + pending
+            + excluded
+        )
+
+        if reconciled_rows != input_rows:
+            raise M2DatasetBuildError(
+                "Source Event별 Row 상태 대사가 실패했습니다: "
+                f"event={source_event!r}, input={input_rows}, "
+                f"supervised={supervised}, pending={pending}, "
+                f"excluded={excluded}"
+            )
+
+        if expected_target is None:
+            if (
+                rows["target_class"]
+                .notna()
+                .any()
+                or rows["target_code"]
+                .notna()
+                .any()
+            ):
+                raise M2DatasetBuildError(
+                    "event IS NULL Row는 Target Class/Code도 null이어야 합니다."
+                )
+        else:
+            invalid_target = (
+                rows["target_class"]
+                .isna()
+                | rows["target_class"]
+                .ne(expected_target)
+            )
+            invalid_code = (
+                rows["target_code"]
+                .isna()
+                | rows["target_code"]
+                .ne(expected_code)
+            )
+            if (
+                invalid_target.any()
+                or invalid_code.any()
+            ):
+                raise M2DatasetBuildError(
+                    "Source Event와 고정 Target Mapping이 일치하지 않습니다: "
+                    f"event={source_event!r}, "
+                    f"target={expected_target!r}, "
+                    f"code={expected_code!r}"
+                )
+
+        reconciliation[
+            source_event
+        ] = {
+            "target_class": expected_target,
+            "target_code": expected_code,
+            "input_rows": input_rows,
+            "supervised_usable": supervised,
+            "target_pending_or_held": pending,
+            "excluded": excluded,
+            "reconciled_rows": reconciled_rows,
+        }
+
+        reconciled_total += input_rows
+
+    if reconciled_total != len(
+        dataset
+    ):
+        raise M2DatasetBuildError(
+            "Source Event별 입력 수량 합이 전체 PA Row 수와 일치하지 않습니다: "
+            f"{reconciled_total} != {len(dataset)}"
+        )
+
+    return reconciliation
+
+
 def build_quality_summary(
     dataset: pd.DataFrame,
 ) -> dict[str, object]:
-    """M2 입력·Supervised·Pending·Excluded 수량을 정확히 대사한다."""
+    """M2 입력·Supervised·Pending·Excluded 및 Event Mapping 수량을 대사한다."""
     total = int(
         len(dataset)
     )
@@ -1906,6 +2219,12 @@ def build_quality_summary(
             f"total={total}, supervised={supervised}, "
             f"pending={pending}, excluded={excluded}"
         )
+
+    event_mapping_reconciliation = (
+        _build_event_mapping_reconciliation(
+            dataset
+        )
+    )
 
     return {
         "input_plate_appearances": total,
@@ -1947,6 +2266,9 @@ def build_quality_summary(
         "target_class_counts": _value_counts(
             dataset["target_class"]
         ),
+        "event_mapping_reconciliation": (
+            event_mapping_reconciliation
+        ),
         "start_context_quality_counts": _value_counts(
             dataset["start_context_quality"]
         ),
@@ -1967,13 +2289,17 @@ def build_schema_payload(
         Sequence[str],
     ],
 ) -> dict[str, object]:
-    """M2 Output 역할·dtype·Target Mapping을 Schema Artifact로 직렬화한다."""
+    """M2 Output 역할·dtype·Version·Target Mapping을 Schema Artifact로 직렬화한다."""
     return {
         "artifact": "m2_matchup_dataset_schema",
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "dataset_version": DATASET_VERSION,
+        "prediction_contract_version": PREDICTION_CONTRACT_VERSION,
+        "feature_catalog_version": FEATURE_CATALOG_VERSION,
         "feature_version": M2_FEATURE_VERSION,
         "player_feature_version": PLAYER_FEATURE_VERSION,
+        "target_version": TARGET_VERSION,
+        "split_version": SPLIT_VERSION,
         "grain": list(PA_KEY),
         "roles": {
             key: list(value)
@@ -2006,7 +2332,7 @@ def build_quality_report(
     dataset: pd.DataFrame,
     summary: Mapping[str, object],
 ) -> dict[str, object]:
-    """제외·미완료·Context 품질을 행 단위로 추적하는 Quality Report를 만든다."""
+    """제외·미완료·Context 품질과 Event Mapping 대사를 Quality Report로 만든다."""
     excluded_rows = dataset.loc[
         dataset["is_excluded"]
         .fillna(False),
@@ -2033,6 +2359,12 @@ def build_quality_report(
     return {
         "artifact": "m2_matchup_dataset_quality_report",
         "dataset_version": DATASET_VERSION,
+        "prediction_contract_version": PREDICTION_CONTRACT_VERSION,
+        "feature_catalog_version": FEATURE_CATALOG_VERSION,
+        "feature_version": M2_FEATURE_VERSION,
+        "player_feature_version": PLAYER_FEATURE_VERSION,
+        "target_version": TARGET_VERSION,
+        "split_version": SPLIT_VERSION,
         "summary": dict(
             summary
         ),
@@ -2571,6 +2903,9 @@ def build_m2_dataset_files(
         "feature_catalog_version": FEATURE_CATALOG_VERSION,
         "feature_version": M2_FEATURE_VERSION,
         "player_feature_version": PLAYER_FEATURE_VERSION,
+        "player_feature_provenance": summary[
+            "player_feature_provenance"
+        ],
         "target_version": TARGET_VERSION,
         "split_version": SPLIT_VERSION,
         "timestamp_resolution": config["m2"]["timestamp_resolution"],
@@ -2617,6 +2952,13 @@ def build_m2_dataset_files(
             ),
             "player_game_pitching_rows": int(
                 len(pitching_source)
+            ),
+            "player_feature_request_count": int(
+                summary[
+                    "player_feature_provenance"
+                ][
+                    "request_count"
+                ]
             ),
             "split_counts": summary[
                 "split_counts"

@@ -2456,6 +2456,407 @@ Manifest는 입력 경로와 SHA256, 가능한 입력 revision, code revision, �
 
 `Model-ready`는 X/y/split/schema 계약이 고정되어 후속 ML 단계가 소비할 수 있다는 뜻이다. 학습형 Imputation, Scaling, Encoding, Feature Selection, 모델 학습, 성능 비교, Calibration, Backtesting은 #25 범위에 포함하지 않는다.
 
+##### M2 Model-ready Dataset (#26)
+
+M2는 특정 Plate Appearance가 시작되는 순간 이용 가능한 Context와
+시작 타자·투수의 전일까지 Historical Feature를 사용해
+해당 PA의 최종 Event Class를 예측하기 위한 Processed Dataset이다.
+
+입력:
+
+```text
+data/raw/hf_kbo_pbp/2023.parquet
+data/raw/hf_kbo_pbp/2024.parquet
+data/raw/hf_kbo_pbp/2025.parquet
+data/raw/hf_kbo_pbp/2026.parquet
+data/raw/hf_kbo_pbp/download_manifest.csv
+data/raw/hf_kbo_pbp/schema.yaml
+data/interim/hf_kbo_pbp/derived/plate_appearances.parquet
+data/interim/hf_kbo_pbp/derived/player_game_batting.parquet
+data/interim/hf_kbo_pbp/derived/player_game_pitching.parquet
+configs/processed_dataset.json
+```
+
+출력:
+
+```text
+data/processed/hf_kbo_pbp/m2/matchup_dataset.parquet
+data/processed/hf_kbo_pbp/m2/matchup_dataset.manifest.json
+data/processed/hf_kbo_pbp/m2/matchup_dataset.schema.json
+data/processed/hf_kbo_pbp/m2/matchup_dataset.quality.json
+```
+
+Grain:
+
+```text
+(game_pk, at_bat_number)
+```
+
+실행:
+
+```bash
+python scripts/build_m2_dataset.py
+```
+
+M2 Builder는 Canonical `plate_appearances.parquet`를
+PA Grain과 최종 Event의 기준으로 사용하지만,
+Canonical `batter`, `pitcher`, `stand`를 PA 시작 선수라고 가정하지 않는다.
+
+동일한 고정 Raw snapshot을
+`(game_pk, at_bat_number, pitch_number)` 순서로 안정 정렬한 뒤
+PA별 실제 첫 Raw Row 한 행 자체에서 다음 값을 복원한다.
+
+```text
+starting_batter
+starting_pitcher
+starting_stand
+```
+
+컬럼별 `groupby().first()`를 사용해 첫 Row의 null을
+뒤 Row의 non-null 값으로 채운 가상의 시작 Context를 만들지 않는다.
+
+Canonical 귀속 값은 별도 Audit으로 유지한다.
+
+```text
+credited_batter
+final_pitcher
+credited_stand
+```
+
+`starting_batter`, `starting_pitcher`는 Join/Audit Key이며
+기본 모델 X에 포함하지 않는다.
+
+PA-start Context X:
+
+```text
+inning
+inning_topbot
+outs_before
+on_1b_occupied
+on_2b_occupied
+on_3b_occupied
+score_diff_before
+starting_stand
+```
+
+원시 Runner ID는 X에 포함하지 않고 Base 점유 여부만 사용한다.
+투수 손잡이는 Raw에서 별도로 확인된 정보가 없으므로 추정하지 않는다.
+
+시작 타자·투수 Historical Feature는
+#24 `player_pregame_v1` Builder를 재사용한다.
+
+Prediction Date:
+
+```text
+prediction_date = PA.game_date
+```
+
+Historical Cutoff:
+
+```text
+source.game_date < prediction_date
+```
+
+따라서 Prediction Date 당일 Player Game과
+Same-day/Doubleheader 결과는 Historical Source에 포함하지 않는다.
+
+Player Feature 요청은 다음 Grain으로 중복 제거한 뒤 #24 Builder에 전달한다.
+
+```text
+(player_id, role, prediction_date)
+```
+
+History가 없는 시작 선수도 PA에서 삭제하지 않는다.
+
+Cold Start:
+
+```text
+count feature = 0
+rate feature = null
+has_history = false
+history_game_count = 0
+max_source_game_date = null
+```
+
+Pitching Historical Feature의 `hist_outs_recorded`는
+#24의 nullable 불확실성 계약을 그대로 유지한다.
+
+Source History에 불확실 `outs_recorded`가 하나라도 존재하면
+0으로 채우거나 결측을 제외한 부분 합계를 정확한 Outs처럼 사용하지 않는다.
+
+M2 Feature Set은 `feature_catalog_v1`의 `extended_v1`을 사용한다.
+
+`baseline_v1`의 PA-start Context와 Batter/Pitcher Expanding Feature에
+최근 5/10/20 Player Game Rolling Feature를 추가한다.
+
+현재 PA의 다음 정보는 X에 포함하지 않는다.
+
+```text
+event
+pa_completed
+runs_scored
+post_outs
+post_on_1b
+post_on_2b
+post_on_3b
+post_home_score
+post_away_score
+pitch_rows
+pitch_count
+ball_pitch_count
+strike_pitch_count
+in_play_pitch_count
+credited_batter
+final_pitcher
+credited_stand
+미래 substitution flag
+target_class
+target_code
+split
+quality/exclusion/censor/purge/label 상태
+```
+
+Dataset 소비자는 `X = all columns except y` 방식으로 Feature를 만들지 않는다.
+Schema/Manifest의 명시적 `x_columns`만 사용한다.
+
+Target Source:
+
+```text
+plate_appearances.event
+```
+
+고정 15→11 Mapping:
+
+```text
+single               -> 1B
+double               -> 2B
+triple               -> 3B
+home_run             -> HR
+walk                 -> BB
+hit_by_pitch         -> HBP
+strikeout            -> SO
+field_out            -> OUT
+double_play           -> OUT
+triple_play           -> OUT
+sac_bunt              -> OUT
+sac_fly               -> OUT
+field_error           -> ROE
+fielders_choice       -> FC
+catcher_interference  -> CI
+```
+
+고정 Class 순서와 Code:
+
+```text
+1B   = 0
+2B   = 1
+3B   = 2
+HR   = 3
+BB   = 4
+HBP  = 5
+SO   = 6
+OUT  = 7
+ROE  = 8
+FC   = 9
+CI   = 10
+```
+
+`OUT`은 위 Event Group의 분류명이며
+정확히 하나의 out이 발생했다는 의미가 아니다.
+
+`ROE`, `FC`, `CI`를 임의로 `OUT` 또는 `OTHER`로 병합하지 않는다.
+
+원본 `source_event`는 Audit으로 그대로 보존한다.
+
+`event IS NULL`인 미완료 PA는 다음 상태로 유지한다.
+
+```text
+target_class = null
+target_code = null
+is_censored = true
+supervised_usable = false
+label_status = target_pending
+```
+
+알 수 없는 non-null Event는 자동 보정하지 않고
+계약 오류로 Builder를 중단한다.
+
+Pitch-less PA는 자동 제외하지 않는다.
+
+Raw 첫 관측 Row의 `pitch_number=0`이고 실제 Pitch가 하나도 없는 경우:
+
+```text
+start_context_quality = verified_pitchless_start
+```
+
+Raw 첫 관측 Row가 `pitch_number=1`이면:
+
+```text
+start_context_quality = verified_first_pitch_start
+```
+
+Raw 첫 관측 Row가 `pitch_number>1`이면
+초기 Pitch Row가 누락되었을 가능성이 있으므로
+PA 시작 Context를 완전히 관측했다고 주장하지 않는다.
+
+```text
+start_context_quality = unverified_missing_initial_pitch_rows
+is_excluded = true
+exclusion_reason = start_context_not_fully_observed
+```
+
+이 Row는 Audit Dataset에는 유지하지만
+supervised 학습 대상으로 사용하지 않는다.
+
+PA 도중 타자 또는 투수가 교체되어도
+미래 교체 사실을 이용해 Row를 미리 제거하지 않는다.
+
+Prediction 의미는 다음과 같다.
+
+```text
+PA 시작 Context
++
+PA 시작 타자 Historical Feature
++
+PA 시작 투수 Historical Feature
+
+-> 최종 PA Event
+```
+
+시작 선수와 기록 귀속 선수의 차이는 Audit 및 subgroup 진단용이며,
+PA 최종 결과를 시작 투수 개인의 책임으로 해석한다는 뜻이 아니다.
+
+시간 Split은 `season_split_v1`을 사용한다.
+
+```text
+2023 -> train
+2024 -> validation
+2025 -> test
+2026 -> snapshot
+```
+
+Random Split은 사용하지 않는다.
+
+동일 `game_pk`의 PA는 반드시 하나의 `prediction_date`와
+하나의 Split만 가져야 한다.
+
+Label Availability는 날짜보다 세밀한 종료 timestamp가 없으므로
+완료 PA에 대해 보수적으로 다음과 같이 기록한다.
+
+```text
+label_available_at = game_date + 1 calendar day
+availability_basis = conservative_next_date
+```
+
+미완료 PA의 `label_available_at`은 null이다.
+
+Schema Artifact는 다음 역할을 명시적으로 분리한다.
+
+```text
+key_columns
+audit_columns
+x_columns
+y_columns
+split_columns
+quality_columns
+control_columns
+label_status_columns
+```
+
+Manifest/Quality Artifact는 최소 다음 provenance와 대사를 기록한다.
+
+```text
+Raw fixed revision
+Raw/Canonical/Player Game 입력 경로
+입력 SHA256
+Code Revision
+Prediction Contract Version
+Feature Catalog Version
+M2 Feature Version
+Player Feature Version
+Player Feature Request Count
+Player Feature Content Fingerprint
+Target Version
+Split Version
+Output Schema Version
+Prediction Range
+Raw/Canonical/Player Game Source Coverage
+Row / Null / Split Count
+Source Event Count
+Target Class Count
+Source Event별 input -> target -> status Reconciliation
+시작 선수와 Canonical 귀속 선수 차이 진단
+Start Context 품질 수량
+Exclusion / Censor / Purge 수량
+Dataset Content Fingerprint
+Deterministic Identity
+```
+
+Player Feature provenance는 실제 M2에 Join된
+중복 제거 Batter/Pitcher 요청 결과를 대상으로 결정적으로 계산한다.
+
+Builder 실행 전후 모든 입력 파일 SHA256을 비교해
+입력이 변경되지 않았음을 확인한다.
+
+Output/Manifest/Schema/Quality Report는 입력 파일과 같은 경로를 사용할 수 없으며
+`data/raw/`, `data/interim/` 아래에 쓸 수 없다.
+
+Dataset Parquet은 원자적으로 저장한 뒤
+dtype, Column 순서, PA Grain, Content Fingerprint를 다시 확인한다.
+
+Schema와 Quality Report 검증이 끝난 뒤
+`run_status=complete` Manifest를 마지막에 기록한다.
+
+현재 고정 Raw snapshot 검증에서 사용한 revision:
+
+```text
+6afc8af044e3bba5f326b688e8cb41d7ff7065ec
+```
+
+해당 검증 Run에서 관측된 수량:
+
+```text
+input PA            = 207133
+supervised usable   = 206370
+target pending      = 550
+explicit excluded   = 213
+
+207133
+= 206370
++ 550
++ 213
+```
+
+동일 검증 Run에서 다음 진단값을 확인했다.
+
+```text
+pitch-less PA                   = 364
+starting_stand null             = 1764
+starting batter != credited     = 44
+starting pitcher != final       = 183
+```
+
+위 수량은 해당 고정 Raw revision에서 확인한 Snapshot 진단값이며
+향후 Dataset의 영구 고정 Row Count나 하드코딩 Assertion이 아니다.
+
+동일 입력·동일 계약·동일 설정으로 다시 생성하면
+Dataset Content Fingerprint는 결정적이어야 한다.
+
+`Model-ready`는 PA-start 시점의 Leakage-safe X, Target,
+고정 시간 Split, Schema, Manifest, Quality/Exclusion 상태가
+후속 ML 단계에서 소비 가능한 형태로 고정됐다는 의미다.
+
+다음을 의미하지 않는다.
+
+```text
+Matchup 승률 모델 학습 완료
+최적 알고리즘 선정 완료
+Hyperparameter Tuning 완료
+성능 평가 완료
+Pitch-by-pitch M5 구현 완료
+당일 실시간 Player History 구현 완료
+```
+
 ##### 시간 Split
 
 고정 Split Version:
