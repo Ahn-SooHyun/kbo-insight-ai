@@ -1,6 +1,112 @@
 {
   "prediction_contract_version": "prediction_dataset_contract_v1",
   "feature_catalog_version": "feature_catalog_v1",
+  "m2": {
+    "dataset_version": "m2_matchup_dataset_v1",
+    "feature_version": "extended_v1",
+    "target_version": "m2_target_v1",
+    "split_version": "season_split_v1",
+    "output_schema_version": "m2_matchup_dataset_schema_v1",
+    "timestamp_resolution": "date",
+    "raw_seasons": [2023, 2024, 2025, 2026],
+    "target_classes": [
+      {
+        "class": "1B",
+        "code": 0
+      },
+      {
+        "class": "2B",
+        "code": 1
+      },
+      {
+        "class": "3B",
+        "code": 2
+      },
+      {
+        "class": "HR",
+        "code": 3
+      },
+      {
+        "class": "BB",
+        "code": 4
+      },
+      {
+        "class": "HBP",
+        "code": 5
+      },
+      {
+        "class": "SO",
+        "code": 6
+      },
+      {
+        "class": "OUT",
+        "code": 7
+      },
+      {
+        "class": "ROE",
+        "code": 8
+      },
+      {
+        "class": "FC",
+        "code": 9
+      },
+      {
+        "class": "CI",
+        "code": 10
+      }
+    ],
+    "event_mapping": {
+      "single": "1B",
+      "double": "2B",
+      "triple": "3B",
+      "home_run": "HR",
+      "walk": "BB",
+      "hit_by_pitch": "HBP",
+      "strikeout": "SO",
+      "field_out": "OUT",
+      "double_play": "OUT",
+      "triple_play": "OUT",
+      "sac_bunt": "OUT",
+      "sac_fly": "OUT",
+      "field_error": "ROE",
+      "fielders_choice": "FC",
+      "catcher_interference": "CI"
+    },
+    "split_ranges": [
+      {
+        "name": "train",
+        "start": "2023-01-01",
+        "end_exclusive": "2024-01-01"
+      },
+      {
+        "name": "validation",
+        "start": "2024-01-01",
+        "end_exclusive": "2025-01-01"
+      },
+      {
+        "name": "test",
+        "start": "2025-01-01",
+        "end_exclusive": "2026-01-01"
+      },
+      {
+        "name": "snapshot",
+        "start": "2026-01-01",
+        "end_exclusive": "2027-01-01"
+      }
+    ],
+    "paths": {
+      "raw_dir": "data/raw/hf_kbo_pbp",
+      "raw_manifest": "data/raw/hf_kbo_pbp/download_manifest.csv",
+      "raw_schema": "data/raw/hf_kbo_pbp/schema.yaml",
+      "plate_appearances": "data/interim/hf_kbo_pbp/derived/plate_appearances.parquet",
+      "player_game_batting": "data/interim/hf_kbo_pbp/derived/player_game_batting.parquet",
+      "player_game_pitching": "data/interim/hf_kbo_pbp/derived/player_game_pitching.parquet",
+      "output": "data/processed/hf_kbo_pbp/m2/matchup_dataset.parquet",
+      "manifest": "data/processed/hf_kbo_pbp/m2/matchup_dataset.manifest.json",
+      "schema": "data/processed/hf_kbo_pbp/m2/matchup_dataset.schema.json",
+      "quality_report": "data/processed/hf_kbo_pbp/m2/matchup_dataset.quality.json"
+    }
+  },
   "m1": {
     "dataset_version": "m1_game_dataset_v1",
     "feature_version": "extended_v1",
