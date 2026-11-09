@@ -1,0 +1,25 @@
+# Python 실행 및 설치 산출물
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 실제 환경 설정과 비밀값 파일
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 기본 데이터 및 산출물
+/data/
+/models/
+/results/
+/.cache/
+
+# 테스트 도구의 임시 산출물
+.pytest_cache/
+.coverage
+htmlcov/
