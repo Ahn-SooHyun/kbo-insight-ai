@@ -1,0 +1,9 @@
+raw_dir = "data/raw"
+interim_dir = "data/interim"
+processed_dir = "data/processed"
+models_dir = "models"
+results_dir = "results"
+cache_dir = ".cache"
+
+seed = 42
+log_level = "INFO"

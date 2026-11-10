@@ -1,0 +1,17 @@
+[build-system]
+requires = ["uv_build==0.13.7"]
+build-backend = "uv_build"
+
+[project]
+name = "kbo-insight-ai"
+version = "0.1.0"
+description = "KBO Insight AI의 최소 실행 및 설정 기반"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.scripts]
+kbo-insight = "kbo_insight_ai.__main__:main"
+
+[tool.uv.build-backend]
+source-include = ["kbo.toml", "tests/**"]
