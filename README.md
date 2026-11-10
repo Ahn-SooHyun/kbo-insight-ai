@@ -7,7 +7,7 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 [저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [예측·평가 계약](docs/standards/project_contract.md)
 
 > **현재 제공 범위 · 2026년 11월 10일**  
-> 개발·예측·평가 기준 문서와 최소 Python 개발 기반을 제공한다. 현재 소스에 정의된 실행 기능은 도움말과 읽기 전용 환경·설정 확인이다. 코드·설정·테스트 파일은 확인했으나 설치·import·진입점·테스트의 실행 결과는 아직 확인하지 않았다. 실제 수집·학습·예측·시뮬레이션과 성능 결과는 포함하지 않는다. 개발 흐름의 [현재 확인 범위](docs/planning/development_workflow.md#status)는 해당 문서에 인수된 증거의 범위를 나타낸다.
+> 개발·예측·평가 기준 문서와 최소 Python 개발 기반을 제공한다. 현재 실행 기능은 도움말과 읽기 전용 환경·설정 확인이다. Windows AMD64·Python 3.12.15·uv 0.13.7 환경에서 패키지 설치·import·모듈 및 설치된 CLI·경로 확인과 테스트 11개 통과를 확인했다. 실제 수집·학습·예측·시뮬레이션과 성능 결과는 포함하지 않는다. 개발 흐름의 [현재 확인 범위](docs/planning/development_workflow.md#status)는 해당 문서에 인수된 증거의 범위를 나타낸다.
 
 | 목적                | 읽을 곳                                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -131,7 +131,7 @@ kbo-insight-ai/
 | 설치 이름 / import 이름  | `kbo-insight-ai` / `kbo_insight_ai`   |
 | 설치되는 CLI 이름        | `kbo-insight`                         |
 
-Python 3.12.15와 uv 0.13.7의 버전·실행은 사용자 환경에서 확인했다. 프로젝트 설치·import·기본 명령·테스트의 성공은 아직 확인하지 않았다. 다른 OS와 다른 Python 3.12 패치 버전도 별도의 실행 검증이 필요하다.
+Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insight-ai 0.1.0의 편집 가능 설치·의존성 검사·import·기본 명령과 테스트 11개 통과를 확인했다. 다른 OS와 다른 Python 3.12 패치 버전도 별도의 실행 검증이 필요하다.
 
 실행 의존성이 없으므로 현재 별도 의존성 목록이나 lock 파일은 두지 않는다. Python 기본 요청과 빌드 도구는 각각 `.python-version`과 `pyproject.toml`에 고정한다. 향후 실행 의존성을 추가할 때는 재현 가능한 잠금 방식도 함께 정한다.
 
@@ -141,7 +141,7 @@ Python 3.12.15와 uv 0.13.7의 버전·실행은 사용자 환경에서 확인�
 
 ### 3.2 설정 파일과 우선순위
 
-설정은 프로젝트 기준 디렉터리의 `kbo.toml` 한 파일에서 읽는다. 다음 8개 항목이 모두 필수이며, 누락하거나 지원하지 않는 항목을 추가하면 오류다.
+설정은 프로젝트 기준 디렉터리의 `kbo.toml` 한 파일에서 읽는다. 설정 파일은 UTF-8 인코딩이어야 하며, 인코딩 오류와 TOML 문법 오류는 설정 오류로 처리한다. 다음 8개 항목이 모두 필수이며, 누락하거나 지원하지 않는 항목을 추가하면 오류다.
 
 | 설정            | 타입·허용 범위                                          | 제공 파일의 값   |
 | --------------- | ------------------------------------------------------- | ---------------- |
@@ -168,7 +168,7 @@ Python 3.12.15와 uv 0.13.7의 버전·실행은 사용자 환경에서 확인�
 
 ### 3.3 경로 해석과 검증
 
-상대 자료 경로는 프로젝트 기준 디렉터리에 붙이고, 절대 자료 경로는 해당 위치를 사용한다. 현재 작업 디렉터리는 자료 위치를 결정하지 않는다. 경로의 공백과 한글은 그대로 처리한다.
+상대 자료 경로는 프로젝트 기준 디렉터리에 붙이고, 절대 자료 경로는 해당 위치를 사용한다. 현재 작업 디렉터리는 자료 위치를 결정하지 않는다. 경로의 공백과 한글은 그대로 처리한다. Windows의 드라이브 상대경로(`C:raw`)와 드라이브 없는 루트 경로(`/raw`, `\raw`)는 허용하지 않는다.
 
 경로의 `..`와 심볼릭 링크는 정규화한다. 설정 문자열 안의 환경 변수와 `~`는 자동 확장하지 않는다. 경로의 대소문자 비교는 실행 플랫폼의 `pathlib` 규칙을 따르므로, 실제 파일·폴더 이름의 대소문자도 일치시켜야 한다.
 
@@ -274,7 +274,7 @@ Python은 일반 import 중 바이트코드 캐시를 만들 수 있다. 아래 
 
 ## 7. 설치·기본 확인·테스트 명령
 
-아래 절차는 현재 코드에 맞춘 Windows PowerShell 명령이며 실제 성공 결과는 아직 확인하지 않았다. 소스·설정 파일을 적용한 뒤 실행한다.
+아래 절차는 Windows AMD64·Python 3.12.15·uv 0.13.7 환경에서 확인한 설치·검증 동작을 재현하는 Windows PowerShell 명령이다. 패키지 버전 조회는 내부 문자열의 따옴표 전달 문제를 피하도록 패키지 이름을 별도 인자로 넘긴다. 소스·설정 파일을 적용한 뒤 실행한다.
 
 첫 설치는 1번부터 진행한다. 기존 `.venv`가 있으면 자동 덮어쓰기를 막고 중단한다. 이 경우 기존 환경의 위치·Python 버전을 확인한 뒤 재사용 여부를 판단한다. 이미 설치된 환경의 재검증은 작업 디렉터리와 경로 변수를 준비한 뒤 4번부터 실행한다.
 
@@ -322,7 +322,7 @@ if ($LASTEXITCODE -ne 0) { throw '설치 목록 확인 실패' }
 uv pip check --python $kboProjectPython
 if ($LASTEXITCODE -ne 0) { throw '설치 의존성 확인 실패' }
 
-& $kboProjectPython -B -c 'import sys; from importlib.metadata import version; print(sys.version); print(sys.executable); print(version("kbo-insight-ai")); sys.exit(0 if sys.version_info[:3] == (3, 12, 15) else 2)'
+& $kboProjectPython -B -c 'import sys; from importlib.metadata import version; print(sys.version); print(sys.executable); print(version(sys.argv[1])); sys.exit(0 if sys.version_info[:3] == (3, 12, 15) else 2)' 'kbo-insight-ai'
 if ($LASTEXITCODE -ne 0) { throw '설치 환경 확인 실패' }
 
 # 5. import·진입점·경로·정상 및 오류 동작·테스트 확인

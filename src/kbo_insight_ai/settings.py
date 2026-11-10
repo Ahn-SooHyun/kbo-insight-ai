@@ -129,9 +129,9 @@ def load_settings(
     try:
         with (root / "kbo.toml").open("rb") as stream:
             config: dict[str, object] = tomllib.load(stream)
-    except tomllib.TOMLDecodeError:
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
         raise SettingsError(
-            "kbo.toml: TOML 문법을 확인하세요."
+            "kbo.toml: UTF-8 인코딩과 TOML 문법을 확인하세요."
         ) from None
     except OSError:
         raise SettingsError(
@@ -165,6 +165,10 @@ def load_settings(
 
         candidate = Path(value)
         if not candidate.is_absolute():
+            if candidate.drive or candidate.root:
+                raise SettingsError(
+                    f"{name}: 드라이브 상대경로나 루트 상대경로는 허용하지 않습니다."
+                )
             candidate = root / candidate
         resolved = _directory(candidate, name)
 

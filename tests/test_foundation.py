@@ -259,6 +259,28 @@ class FoundationTests(unittest.TestCase):
         self.assertNotIn(marker, result.stderr)
         self.assertNotIn("검증용_비밀값_대역", result.stderr)
 
+    def test_non_utf8_config_error(self) -> None:
+        """UTF-8이 아닌 설정을 오류 로그와 종료 코드 2로 처리한다."""
+        (self.root / "kbo.toml").write_bytes(b"\xff")
+
+        with self.assertRaises(SettingsError):
+            load_settings(self.root, environ={})
+
+        result = self._run("check")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("UTF-8", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    @unittest.skipUnless(os.name == "nt", "Windows 경로 규칙 검증")
+    def test_windows_ambiguous_paths(self) -> None:
+        """프로젝트 기준을 벗어날 수 있는 모호한 Windows 경로를 거절한다."""
+        for value in ("C:raw", "D:raw", "/raw", "\\raw"):
+            with self.subTest(value=value):
+                self._write_config(raw_dir=value)
+                with self.assertRaises(SettingsError):
+                    load_settings(self.root, environ={})
+
 
 if __name__ == "__main__":
     unittest.main()
