@@ -77,9 +77,15 @@ kbo-insight-ai/
 │           ├── __init__.py
 │           └── raw_sample.py
 ├── tests/
-│   ├── test_foundation.py
-│   ├── test_collection.py
-│   └── test_inspection.py
+│   ├── foundation/
+│   │   ├── __init__.py
+│   │   └── test_foundation.py
+│   ├── ingestion/
+│   │   ├── __init__.py
+│   │   └── test_collection.py
+│   └── validation/
+│       ├── __init__.py
+│       └── test_inspection.py
 └── docs/
     ├── planning/
     │   └── development_workflow.md
@@ -87,21 +93,23 @@ kbo-insight-ai/
         └── project_contract.md
 ```
 
-| 위치                               | 책임                                                    |
-| ---------------------------------- | ------------------------------------------------------- |
-| `.github/`                         | Issue·PR 양식                                           |
-| `.python-version`                  | 기본 Python 요청 버전                                   |
-| `pyproject.toml`                   | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
-| `kbo.toml`                         | 현재 사용하는 경로·Seed·로그 설정                       |
-| `.gitignore`                       | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
-| `src/kbo_insight_ai/__init__.py`   | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
-| `src/kbo_insight_ai/__main__.py`   | 도움말·설정 확인 명령과 CLI 로그                        |
-| `src/kbo_insight_ai/settings.py`   | 설정 읽기·타입 및 범위 검증·경로 해석                   |
-| `src/kbo_insight_ai/ingestion/pilot.py` | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
-| `tests/test_collection.py`         | 합성 응답 기반 수집·실패·보존 검증                      |
-| `tests/test_foundation.py`         | 설정·경로·오류·읽기 전용 동작 검증                      |
-| `docs/planning/`                   | 개발 순서·선행 관계·증거·인수 기준                      |
-| `docs/standards/`                  | 예측·평가·저장·설정의 상세 계약                         |
+| 위치                                          | 책임                                                    |
+| --------------------------------------------- | ------------------------------------------------------- |
+| `.github/`                                    | Issue·PR 양식                                           |
+| `.python-version`                             | 기본 Python 요청 버전                                   |
+| `pyproject.toml`                              | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
+| `kbo.toml`                                    | 현재 사용하는 경로·Seed·로그 설정                       |
+| `.gitignore`                                  | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
+| `src/kbo_insight_ai/__init__.py`              | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
+| `src/kbo_insight_ai/__main__.py`              | 도움말·설정 확인 명령과 CLI 로그                        |
+| `src/kbo_insight_ai/settings.py`              | 설정 읽기·타입 및 범위 검증·경로 해석                   |
+| `src/kbo_insight_ai/ingestion/pilot.py`       | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
+| `src/kbo_insight_ai/validation/raw_sample.py` | 고정 원본의 파일 동일성·행 근거를 읽기 전용으로 검사    |
+| `tests/ingestion/test_collection.py`          | 합성 응답 기반 수집·실패·보존 검증                      |
+| `tests/foundation/test_foundation.py`         | 설정·경로·오류·읽기 전용 동작 검증                      |
+| `tests/validation/test_inspection.py`         | 합성 Parquet 기반 원본 검사·실패 동작 검증              |
+| `docs/planning/`                              | 개발 순서·선행 관계·증거·인수 기준                      |
+| `docs/standards/`                             | 예측·평가·저장·설정의 상세 계약                         |
 
 현재 구조는 소스·테스트·문서를 폴더로 분리하고, 패키지 내부에서는 명령 진입점과 설정 책임을 파일로 분리한다. 설정과 CLI는 패키지 루트에 두고 수집과 검사는 각각 `ingestion/`과 `validation/`에 둔다.
 
@@ -127,19 +135,19 @@ kbo-insight-ai/
 
 ### 3.1 환경과 설치 방식
 
-| 항목                     | 선정 내용                             |
-| ------------------------ | ------------------------------------- |
-| 확인된 실행 환경         | Windows AMD64                         |
-| Python                   | 3.12.15                               |
-| 패키지가 허용하는 Python | 3.12 계열: `>=3.12,<3.13`             |
-| 환경·패키지 관리         | uv 0.13.7                             |
-| 가상환경                 | 프로젝트의 `.venv`                    |
-| 개발 설치                | 편집 가능 설치                        |
-| 빌드 도구                | `uv_build==0.13.7`                    |
-| 실행 의존성              | 기본 수집은 표준 라이브러리, inspection은 선택 PyArrow 사용     |
-| 테스트 의존성            | unittest, 선택 inspection 테스트는 PyArrow 사용 |
-| 설치 이름 / import 이름  | `kbo-insight-ai` / `kbo_insight_ai`   |
-| 설치되는 CLI 이름        | `kbo-insight`                         |
+| 항목                     | 선정 내용                                                   |
+| ------------------------ | ----------------------------------------------------------- |
+| 확인된 실행 환경         | Windows AMD64                                               |
+| Python                   | 3.12.15                                                     |
+| 패키지가 허용하는 Python | 3.12 계열: `>=3.12,<3.13`                                   |
+| 환경·패키지 관리         | uv 0.13.7                                                   |
+| 가상환경                 | 프로젝트의 `.venv`                                          |
+| 개발 설치                | 편집 가능 설치                                              |
+| 빌드 도구                | `uv_build==0.13.7`                                          |
+| 실행 의존성              | 기본 수집은 표준 라이브러리, inspection은 선택 PyArrow 사용 |
+| 테스트 의존성            | unittest, 선택 inspection 테스트는 PyArrow 사용             |
+| 설치 이름 / import 이름  | `kbo-insight-ai` / `kbo_insight_ai`                         |
+| 설치되는 CLI 이름        | `kbo-insight`                                               |
 
 Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insight-ai 0.1.0의 편집 가능 설치·의존성 검사·import·기본 명령과 테스트 11개 통과를 확인했다. 다른 OS와 다른 Python 3.12 패치 버전도 별도의 실행 검증이 필요하다.
 
@@ -268,16 +276,16 @@ Naver의 두 실행은 각각 10초 두 시도, 30초 한 시도 모두 HTTP 상
 
 대체 원천은 공개 배포된 `slothman3878/kbo_playbyplay`의 2023년 파일 하나다. 물리 배포 단위가 시즌 파일이므로 1이닝보다 크다. 파일 전체를 원본으로 보존한 뒤 일부 경기/필드를 검토하는 표본이며, 전체 기간 수집이나 2023년 전체 품질 통과를 뜻하지 않는다.
 
-| 항목 | 고정 값 |
-|---|---|
-| revision | 6afc8af044e3bba5f326b688e8cb41d7ff7065ec |
-| 파일 | v0/kbo_pbp_2023.parquet |
-| 게시 크기 | 17,327,447 bytes |
+| 항목         | 고정 값                                                          |
+| ------------ | ---------------------------------------------------------------- |
+| revision     | 6afc8af044e3bba5f326b688e8cb41d7ff7065ec                         |
+| 파일         | v0/kbo_pbp_2023.parquet                                          |
+| 게시 크기    | 17,327,447 bytes                                                 |
 | 게시 SHA-256 | 818f6016655b02fe48b8118281d1b04bfe3548d376fdc70131a41ea539341edb |
 
 [파일/해시 근거](https://huggingface.co/datasets/slothman3878/kbo_playbyplay/blob/main/v0/kbo_pbp_2023.parquet)와 [revision의 파일 크기/해시](https://huggingface.co/datasets/slothman3878/kbo_playbyplay/commit/6afc8af044e3bba5f326b688e8cb41d7ff7065ec)를 조사했다. 요청은 main 대신 위 revision으로 고정한다. 원문 commentary가 없는 파생 배포 파일이며 라이선스/원출처 조건과 사건 의미는 별도 확인한다.
 
-명시적인 `collect-sample --source hf`만 이 파일을 요청한다. 별도 일회용 수집기 없이 기존 통신·원본·해시·시도/결과 저장을 재사용한다. Naver의 1 MiB 상한과 전송 금지 정책은 유지한다. HF는 별도 최대 20 MiB·재시도 없음·최대 3회 주소 전송으로 총 HTTP 요청 최대 4회다. HF 파일 다운로드는 [공식 문서](https://huggingface.co/docs/hub/datasets-downloading)에 명시된 저장/CDN 호스트로 전송될 수 있으므로 HTTPS의 huggingface.co 및 그 하위, *.hf.co만 허용한다. 다른 호스트·HTTP·사용자정보·비표준 포트·fragment는 거절한다. 서명 query나 Location은 로그/manifest에 저장하지 않는다. 별도 인증 정보·브라우저 위장은 사용하지 않는다. 실제 전송/CDN 접근 성공은 아직 확인하지 않았다.
+명시적인 `collect-sample --source hf`만 이 파일을 요청한다. 별도 일회용 수집기 없이 기존 통신·원본·해시·시도/결과 저장을 재사용한다. Naver의 1 MiB 상한과 전송 금지 정책은 유지한다. HF는 별도 최대 20 MiB·재시도 없음·최대 3회 주소 전송으로 총 HTTP 요청 최대 4회다. HF 파일 다운로드는 [공식 문서](https://huggingface.co/docs/hub/datasets-downloading)에 명시된 저장/CDN 호스트로 전송될 수 있으므로 HTTPS의 huggingface.co 및 그 하위, \*.hf.co만 허용한다. 다른 호스트·HTTP·사용자정보·비표준 포트·fragment는 거절한다. 서명 query나 Location은 로그/manifest에 저장하지 않는다. 별도 인증 정보·브라우저 위장은 사용하지 않는다. 실제 전송/CDN 접근 성공은 아직 확인하지 않았다.
 
 정상 파일은 `attempt-01.parquet`로 보존한다. 실패 bytes는 bin과 실패 상태로 남긴다. 게시 크기·SHA-256·Parquet 시작/끝 표식을 대조한 경우에만 `artifact_verified`를 사용한다. **이는 파일 동일성 확인이며 Parquet 필드 파싱·ID 연결·사건 검증 성공이 아니다.** `semantic_validation=not_performed`를 유지한다. 파싱 라이브러리는 아직 추가하지 않았으며, 실제 확보 후 필요한 버전/재현 방식을 확인한다. 캐시가 아닌 raw_dir의 원본·해시·이력을 인계한다.
 

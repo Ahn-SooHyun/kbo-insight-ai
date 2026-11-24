@@ -20,7 +20,7 @@ from kbo_insight_ai.settings import load_settings
 
 
 GAME_ID = "20230401HHWO02023"
-SOURCE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC_BODY = json.dumps(
     {
         "result": {

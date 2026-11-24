@@ -22,7 +22,7 @@ from kbo_insight_ai.ingestion.pilot import HF_FILENAME, HF_REVISION, sha256
 from kbo_insight_ai.settings import load_settings
 
 
-SOURCE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 RUN_ID = "a" * 32
 GAME_ID = "20230401HHWO02023"
 
