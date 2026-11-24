@@ -16,7 +16,18 @@ PATH_NAMES = (
     "results_dir",
     "cache_dir",
 )
-CONFIG_KEYS = frozenset((*PATH_NAMES, "seed", "log_level"))
+COLLECTION_BASE_URL = "https://api-gw.sports.naver.com"
+HF_COLLECTION_BASE_URL = "https://huggingface.co"
+COLLECTION_RANGES = {
+    "collection_timeout_seconds": (1, 30),
+    "collection_retries": (0, 2),
+    "collection_max_bytes": (1, 1048576),
+    "hf_collection_max_bytes": (1, 20971520),
+    "hf_collection_max_redirects": (0, 3),
+}
+CONFIG_KEYS = frozenset(
+    (*PATH_NAMES, "seed", "log_level", "collection_base_url", "hf_collection_base_url", *COLLECTION_RANGES)
+)
 LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 MAX_SEED = 2**32 - 1
 PROTECTED_NAMES = (".git", ".github", ".venv", "src", "tests", "docs")
@@ -39,6 +50,13 @@ class Settings:
     cache_dir: Path
     seed: int
     log_level: str
+    collection_base_url: str
+    collection_timeout_seconds: int
+    collection_retries: int
+    collection_max_bytes: int
+    hf_collection_base_url: str
+    hf_collection_max_bytes: int
+    hf_collection_max_redirects: int
 
 
 def _directory(path: Path, name: str, *, required: bool = False) -> Path:
@@ -155,6 +173,23 @@ def load_settings(
             "log_level: DEBUG, INFO, WARNING, ERROR, CRITICAL 중 하나가 필요합니다."
         )
 
+    if config["collection_base_url"] != COLLECTION_BASE_URL:
+        raise SettingsError(
+            "collection_base_url: 지원하는 공개 원천 주소가 필요합니다."
+        )
+    if config["hf_collection_base_url"] != HF_COLLECTION_BASE_URL:
+        raise SettingsError(
+            "hf_collection_base_url: 지원하는 공개 배포 주소가 필요합니다."
+        )
+    collection_values: dict[str, int] = {}
+    for name, (minimum, maximum) in COLLECTION_RANGES.items():
+        value = config[name]
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise SettingsError(
+                f"{name}: {minimum} 이상 {maximum} 이하의 정수가 필요합니다."
+            )
+        collection_values[name] = value
+
     paths: dict[str, Path] = {}
     for name in PATH_NAMES:
         value = config[name]
@@ -202,4 +237,11 @@ def load_settings(
         cache_dir=paths["cache_dir"],
         seed=seed,
         log_level=log_level,
+        collection_base_url=COLLECTION_BASE_URL,
+        collection_timeout_seconds=collection_values["collection_timeout_seconds"],
+        collection_retries=collection_values["collection_retries"],
+        collection_max_bytes=collection_values["collection_max_bytes"],
+        hf_collection_base_url=HF_COLLECTION_BASE_URL,
+        hf_collection_max_bytes=collection_values["hf_collection_max_bytes"],
+        hf_collection_max_redirects=collection_values["hf_collection_max_redirects"],
     )

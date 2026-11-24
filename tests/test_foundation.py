@@ -23,6 +23,13 @@ BASE_CONFIG: dict[str, object] = {
     "cache_dir": ".cache",
     "seed": 42,
     "log_level": "INFO",
+    "collection_base_url": "https://api-gw.sports.naver.com",
+    "collection_timeout_seconds": 10,
+    "collection_retries": 1,
+    "collection_max_bytes": 1048576,
+    "hf_collection_base_url": "https://huggingface.co",
+    "hf_collection_max_bytes": 20971520,
+    "hf_collection_max_redirects": 3,
 }
 
 READONLY_BOOTSTRAP = r'''
@@ -58,6 +65,8 @@ sys.addaudithook(guard)
 arguments = sys.argv[1:]
 if arguments == ["__import__"]:
     import kbo_insight_ai
+    import kbo_insight_ai.collection
+    import kbo_insight_ai.inspection
     print(kbo_insight_ai.__file__)
 else:
     sys.argv = ["kbo-insight", *arguments]
@@ -167,6 +176,26 @@ class FoundationTests(unittest.TestCase):
             {"log_level": 20},
             {"raw_dir": ""},
             {"raw_dir": 1},
+            {"collection_base_url": "https://example.invalid/?token=비밀값"},
+            {"collection_base_url": []},
+            {"collection_timeout_seconds": True},
+            {"collection_timeout_seconds": 0},
+            {"collection_timeout_seconds": 31},
+            {"collection_timeout_seconds": 1.5},
+            {"collection_retries": True},
+            {"collection_retries": -1},
+            {"collection_retries": 3},
+            {"collection_retries": "1"},
+            {"collection_max_bytes": True},
+            {"collection_max_bytes": 0},
+            {"collection_max_bytes": 1048577},
+            {"hf_collection_base_url": "https://example.invalid"},
+            {"hf_collection_max_bytes": True},
+            {"hf_collection_max_bytes": 0},
+            {"hf_collection_max_bytes": 20971521},
+            {"hf_collection_max_redirects": True},
+            {"hf_collection_max_redirects": -1},
+            {"hf_collection_max_redirects": 4},
         )
         for changes in invalid:
             with self.subTest(changes=changes):
@@ -231,9 +260,15 @@ class FoundationTests(unittest.TestCase):
             "--help",
             root=self.sandbox / "없는 기준",
         )
+        sample_help = self._run(
+            "collect-sample", "--help", root=self.sandbox / "없는 기준"
+        )
+        inspection_help = self._run(
+            "inspect-sample", "--help", root=self.sandbox / "없는 기준"
+        )
         checked = self._run("check")
 
-        for result in (imported, help_result, checked):
+        for result in (imported, help_result, sample_help, inspection_help, checked):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("검증용_비밀값_대역", result.stdout)
             self.assertNotIn("검증용_비밀값_대역", result.stderr)
