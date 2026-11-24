@@ -70,8 +70,12 @@ kbo-insight-ai/
 │       ├── __init__.py
 │       ├── __main__.py
 │       ├── settings.py
-│       ├── collection.py
-│       └── inspection.py
+│       ├── ingestion/
+│       │   ├── __init__.py
+│       │   └── pilot.py
+│       └── validation/
+│           ├── __init__.py
+│           └── raw_sample.py
 ├── tests/
 │   ├── test_foundation.py
 │   ├── test_collection.py
@@ -93,13 +97,13 @@ kbo-insight-ai/
 | `src/kbo_insight_ai/__init__.py`   | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
 | `src/kbo_insight_ai/__main__.py`   | 도움말·설정 확인 명령과 CLI 로그                        |
 | `src/kbo_insight_ai/settings.py`   | 설정 읽기·타입 및 범위 검증·경로 해석                   |
-| `src/kbo_insight_ai/collection.py` | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
+| `src/kbo_insight_ai/ingestion/pilot.py` | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
 | `tests/test_collection.py`         | 합성 응답 기반 수집·실패·보존 검증                      |
 | `tests/test_foundation.py`         | 설정·경로·오류·읽기 전용 동작 검증                      |
 | `docs/planning/`                   | 개발 순서·선행 관계·증거·인수 기준                      |
 | `docs/standards/`                  | 예측·평가·저장·설정의 상세 계약                         |
 
-현재 구조는 소스·테스트·문서를 폴더로 분리하고, 패키지 내부에서는 명령 진입점과 설정 책임을 파일로 분리한다. 패키지의 Python 파일이 3개인 현재 단계에서는 설정이나 CLI를 별도 하위 패키지로 더 나누지 않는다.
+현재 구조는 소스·테스트·문서를 폴더로 분리하고, 패키지 내부에서는 명령 진입점과 설정 책임을 파일로 분리한다. 설정과 CLI는 패키지 루트에 두고 수집과 검사는 각각 `ingestion/`과 `validation/`에 둔다.
 
 `pyproject.toml`·`.python-version`·`.gitignore`는 프로젝트 단위 파일이며, `kbo.toml`도 현재 설정 로더가 프로젝트 기준 위치에서 읽는다. 이를 별도 설정 폴더로 옮기려면 로더와 테스트·안내도 함께 변경해야 한다.
 
@@ -227,7 +231,7 @@ Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insig
 
 ### 3.6 명시적인 원본 표본 수집
 
-`collection.py`는 `load_settings`가 반환한 원본 경로·원천 주소·요청 제한을 사용한다. `collect-sample` 분기에서만 네트워크·디렉터리 생성·파일 쓰기가 발생한다. import·도움말·기존 check는 수집하지 않는다. 바이트코드 쓰기를 막을 때는 Python의 `-B`를 사용한다.
+`ingestion/pilot.py`는 `load_settings`가 반환한 원본 경로·원천 주소·요청 제한을 사용한다. `collect-sample` 분기에서만 네트워크·디렉터리 생성·파일 쓰기가 발생한다. import·도움말·기존 check는 수집하지 않는다. 바이트코드 쓰기를 막을 때는 Python의 `-B`를 사용한다.
 
 대상은 공개 원본에서 확인한 경기 ID 하나와 이닝 하나다. ID 형식 검사는 실제 경기 존재 확인을 대신하지 않는다. 현재 진단 설정은 대기 제한 30초·재시도 0회로 한 번만 요청하고, 응답의 저장 크기는 1 MiB 이하로 제한한다. 이전 10초·재시도 1회 실행은 두 시도 모두 Timeout이었으며, 30초 단일 요청도 Timeout으로 실패했다. 제한 초과 확인을 위해 메모리에서 한 바이트를 더 읽을 수 있으나 초과 응답은 부분 실패로 기록한다. 자동 전송은 차단한다. timeout은 네트워크 대기 제한이며 전체 실행시간의 상한은 아니다.
 
@@ -246,7 +250,7 @@ HTTP 500/502/503/504와 시간 초과·일시 네트워크/불완전 응답만 �
 
 `structure_validated`는 최소 JSON 구조 검사만 통과했다는 뜻이다. 사건 순서·중복·실제 공·타석 경계·교체/주루/번트·대상 응답 일치·좌표 의미·전체 포함·품질 통과를 보증하지 않는다. 추가 필드는 허용하지만 필수 구조·타입이 달라지면 실패한다. `semantic_validation=not_performed`를 유지한다.
 
-관측 시각은 UTC로 남기고 최초 공개 시각은 확인되지 않으면 null이다. 원천 API의 명시 버전은 미확인이므로 null이며 참고 수집 코드 revision과 실제 적용 파일 hash를 별도로 남긴다. declared_base_commit은 인수 기준으로, 현재 Git HEAD 주장과 구분한다. URL·예외 원문·환경 전체·인증 헤더를 무차별 기록하지 않는다.
+관측 시각은 UTC로 남기고 최초 공개 시각은 확인되지 않으면 null이다. 원천 API의 명시 버전은 미확인이므로 null이며 참고 수집 코드 revision과 실제 적용 파일 hash를 별도로 남긴다. 새 수집 이력의 `code_sha256` 키는 패키지 기준 경로이며, 수집 구현은 `ingestion/pilot.py`로 기록한다. declared_base_commit은 인수 기준으로, 현재 Git HEAD 주장과 구분한다. URL·예외 원문·환경 전체·인증 헤더를 무차별 기록하지 않는다.
 
 기본 실행은 확인된 Python 모듈 진입점이다. 설치 실행 파일 정책 제한을 우회하지 않는다. 다음 명령은 합성 응답 테스트 통과 뒤 별도로 실행하며, 실제 응답 성공은 아직 확인하지 않았다.
 

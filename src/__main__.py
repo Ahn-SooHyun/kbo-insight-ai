@@ -57,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     logging.basicConfig(level=settings.log_level, format=LOG_FORMAT)
     if args.command == "inspect-sample":
-        from kbo_insight_ai.inspection import InspectionError, inspect_sample
+        from kbo_insight_ai.validation.raw_sample import InspectionError, inspect_sample
 
         try:
             inspection_result = inspect_sample(settings, args.run_id, args.game_id)
@@ -69,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "collect-sample":
         # 명시적 수집 분기에서만 네트워크·쓰기 기능을 불러온다.
-        from kbo_insight_ai.collection import collect_hf_sample, collect_sample
+        from kbo_insight_ai.ingestion.pilot import collect_hf_sample, collect_sample
 
         try:
             if args.source == "hf":

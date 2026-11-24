@@ -16,9 +16,9 @@ except ImportError:
     pa = None
     pq = None
 
-from kbo_insight_ai import inspection
+from kbo_insight_ai.validation import raw_sample as inspection
 from kbo_insight_ai.__main__ import main
-from kbo_insight_ai.collection import HF_FILENAME, HF_REVISION, sha256
+from kbo_insight_ai.ingestion.pilot import HF_FILENAME, HF_REVISION, sha256
 from kbo_insight_ai.settings import load_settings
 
 
@@ -32,7 +32,7 @@ class InspectionTests(unittest.TestCase):
     """파일 동일성 전제와 행 근거·원본 비변경·실패 상태를 확인한다."""
 
     def setUp(self) -> None:
-        """실제 경기와 무관한 네 행의 임시 Parquet과 이력을 만든다."""
+        """실제 경기와 무관한 다섯 행의 임시 Parquet과 이력을 만든다."""
         temporary = TemporaryDirectory(prefix="kbo-inspection-")
         self.addCleanup(temporary.cleanup)
         self.settings = replace(
@@ -47,18 +47,20 @@ class InspectionTests(unittest.TestCase):
             "pitch_number": 1, "batter": "A", "pitcher": "P1",
             "balls": 0, "strikes": 0, "outs_when_up": 0,
             "on_1b": None, "on_2b": None, "on_3b": None,
-            "events": "walk", "pitch_result": "B", "type": "B",
+            "events": "walk", "pitch_type": "FF", "pitch_result": "B", "type": "B",
             "home_score": 0, "away_score": 0,
             "post_home_score": 0, "post_away_score": 0, "post_outs": 0,
             "post_on_1b": "B", "post_on_2b": None, "post_on_3b": None,
             "release_speed_kmh": 140.0, "plate_x": 0.1, "plate_z": 2.0,
         }
         rows = [
+            {**row, "game_pk": "20230401HTSK02023"},
             row,
-            {**row, "pitch_number": 2, "batter": "B", "pitcher": "P2"},
+            {**row, "pitch_number": 2, "batter": "B", "pitcher": "P2",
+             "pitch_type": "SL", "pitch_result": "F", "type": "S"},
             {**row, "at_bat_number": 2, "pitch_number": 0, "batter": "C",
-             "pitch_result": None, "release_speed_kmh": None, "plate_x": None,
-             "plate_z": None},
+             "pitch_type": None, "pitch_result": None, "type": None,
+             "release_speed_kmh": None, "plate_x": None, "plate_z": None},
             {**row, "at_bat_number": 3, "inning_topbot": "bot",
              "batter": "D", "pitch_result": "W", "type": "S"},
         ]
@@ -99,19 +101,31 @@ class InspectionTests(unittest.TestCase):
         (self.run_dir / name).write_text(json.dumps(value), encoding="utf-8")
 
     def test_rows_and_metadata_without_mutating_raw(self) -> None:
-        """원본 행 번호·참가자 변화 후보를 연결하고 원본/이력을 바꾸지 않는다."""
+        """투구 사례를 원본 행에 연결하고 원본과 이력을 변경하지 않는다."""
         before = {p.name: p.read_bytes() for p in self.run_dir.iterdir()}
         result = inspection.inspect_sample(self.settings, RUN_ID)
-        self.assertEqual(result["physical_file_rows"], 4)
+        self.assertEqual(result["physical_file_rows"], 5)
         self.assertEqual(result["selected_game_rows"], 4)
-        self.assertEqual(result["case_rows"]["pitch_zero"][0]["_source_row_index"], 2)
+        cases = result["case_rows"]
+        pitch_fields = (
+            "_source_row_index", "pitch_number", "pitch_type", "pitch_result", "type",
+        )
+        self.assertEqual(
+            [tuple(row[field] for field in pitch_fields) for row in cases["first_pa"]],
+            [(1, 1, "FF", "B", "B"), (2, 2, "SL", "F", "S")],
+        )
+        zero_pitch = cases["pitch_zero"][0]
+        self.assertEqual(
+            tuple(zero_pitch[field] for field in pitch_fields),
+            (3, 0, None, None, None),
+        )
         changes = result["participant_changes"]
         self.assertEqual(changes["batter_count_distinct"]["pa_key_count"], 1)
         self.assertEqual(changes["pitcher_count_distinct"]["pa_key_count"], 1)
         self.assertEqual(result["quality_status"], "not_assessed")
         self.assertEqual(result["observed_counts"]["zero_pitch_rows"], 1)
-        self.assertEqual(result["observed_counts"]["positive_pitch_rows"], 3)
-        self.assertEqual(result["case_rows"]["selected_game_last_pa"][0]["_source_row_index"], 3)
+        self.assertEqual(result["observed_counts"]["positive_pitch_rows"], 4)
+        self.assertEqual(cases["selected_game_last_pa"][0]["_source_row_index"], 4)
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.run_dir.iterdir()})
 
     def test_tampered_bytes_are_rejected(self) -> None:

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import re
 
-from kbo_insight_ai.collection import (
+from kbo_insight_ai.ingestion.pilot import (
     HF_FILENAME,
     HF_REVISION,
     HF_SAMPLE_BYTES,
@@ -20,7 +20,7 @@ RUN_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 SAMPLE_COLUMNS = (
     "game_pk", "inning", "inning_topbot", "at_bat_number", "pitch_number",
     "batter", "pitcher", "balls", "strikes", "outs_when_up",
-    "on_1b", "on_2b", "on_3b", "events", "pitch_result", "type",
+    "on_1b", "on_2b", "on_3b", "events", "pitch_type", "pitch_result", "type",
     "home_score", "away_score", "post_home_score", "post_away_score",
     "post_outs", "post_on_1b", "post_on_2b", "post_on_3b",
     "release_speed_kmh", "plate_x", "plate_z",

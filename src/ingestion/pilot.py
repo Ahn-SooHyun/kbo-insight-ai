@@ -358,10 +358,10 @@ def _collect(
     run_id = uuid4().hex
     run_dir = settings.raw_dir / "collection" / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
-    module_dir = Path(__file__).resolve().parent
+    package_dir = Path(__file__).resolve().parents[1]
     code_hashes = {
-        name: sha256((module_dir / name).read_bytes())
-        for name in ("collection.py", "settings.py", "__main__.py")
+        name: sha256((package_dir / name).read_bytes())
+        for name in ("ingestion/pilot.py", "settings.py", "__main__.py")
     }
     write_json(
         run_dir / "request.json",

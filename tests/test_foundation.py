@@ -65,8 +65,8 @@ sys.addaudithook(guard)
 arguments = sys.argv[1:]
 if arguments == ["__import__"]:
     import kbo_insight_ai
-    import kbo_insight_ai.collection
-    import kbo_insight_ai.inspection
+    import kbo_insight_ai.ingestion.pilot
+    import kbo_insight_ai.validation.raw_sample
     print(kbo_insight_ai.__file__)
 else:
     sys.argv = ["kbo-insight", *arguments]

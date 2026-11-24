@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
-from kbo_insight_ai import collection
+from kbo_insight_ai.ingestion import pilot as collection
 from kbo_insight_ai.__main__ import main
 from kbo_insight_ai.settings import load_settings
 
@@ -84,6 +84,10 @@ class CollectionTests(unittest.TestCase):
         self.assertIsNone(record["source_published_at"])
         request = json.loads((first / "request.json").read_text(encoding="utf-8"))
         self.assertEqual(request["run_id"], record["run_id"])
+        self.assertEqual(
+            set(request["code_sha256"]),
+            {"ingestion/pilot.py", "settings.py", "__main__.py"},
+        )
         for name, digest in request["code_sha256"].items():
             source = SOURCE_ROOT / "src" / "kbo_insight_ai" / name
             self.assertEqual(digest, collection.sha256(source.read_bytes()))
