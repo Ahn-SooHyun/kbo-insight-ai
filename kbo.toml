@@ -7,3 +7,13 @@ cache_dir = ".cache"
 
 seed = 42
 log_level = "INFO"
+# 명시적 표본 수집에서만 사용하는 공개 원천과 요청 제한
+collection_base_url = "https://api-gw.sports.naver.com"
+collection_timeout_seconds = 30
+collection_retries = 0
+collection_max_bytes = 1048576
+
+# 고정 버전의 HF 배포 파일 하나를 위한 별도 저장·전송 제한
+hf_collection_base_url = "https://huggingface.co"
+hf_collection_max_bytes = 20971520
+hf_collection_max_redirects = 3

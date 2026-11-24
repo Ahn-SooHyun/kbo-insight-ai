@@ -1,4 +1,4 @@
-"""도움말과 읽기 전용 환경·설정 확인 진입점을 제공한다."""
+"""읽기 전용 확인과 명시적인 원본 표본 수집 진입점을 제공한다."""
 
 import argparse
 from collections.abc import Sequence
@@ -14,10 +14,10 @@ LOGGER = logging.getLogger("kbo_insight_ai")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """명령을 해석하고 정상은 0, 설정 오류는 2를 반환한다."""
+    """정상 0, 인자·설정 오류 2, 수집 실패 3, 저장 실패 4, 검사 실패 5를 반환한다."""
     parser = argparse.ArgumentParser(
         prog="kbo-insight",
-        description="KBO Insight AI의 최소 환경·설정 확인",
+        description="KBO Insight AI의 환경 확인과 명시적 원본 표본 수집",
     )
     parser.add_argument(
         "--project-root",
@@ -29,7 +29,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         "check",
         help="설정과 경로를 읽기 전용으로 확인",
     )
+    sample = commands.add_parser(
+        "collect-sample",
+        help="출처별 제한된 원본 표본과 이력을 보존",
+    )
+    sample.add_argument("--source", choices=("naver", "hf"), default="naver")
+    sample.add_argument("--game-id", help="Naver 원본에서 확인한 경기 ID")
+    sample.add_argument("--inning", type=int, choices=range(1, 13))
+    inspection_parser = commands.add_parser(
+        "inspect-sample", help="저장된 HF 원본의 필드·행 사례를 읽기 전용 검사"
+    )
+    inspection_parser.add_argument("--run-id", required=True)
+    inspection_parser.add_argument("--game-id", default="20230401HHWO02023")
     args = parser.parse_args(argv)
+    if args.command == "collect-sample":
+        if args.source == "naver" and (args.game_id is None or args.inning is None):
+            parser.error("naver 수집에는 --game-id와 --inning이 필요합니다.")
+        if args.source == "hf" and (args.game_id is not None or args.inning is not None):
+            parser.error("hf 파일 수집에는 경기 ID·이닝 인자를 사용하지 않습니다.")
 
     try:
         settings = load_settings(args.project_root)
@@ -39,6 +56,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     logging.basicConfig(level=settings.log_level, format=LOG_FORMAT)
+    if args.command == "inspect-sample":
+        from kbo_insight_ai.inspection import InspectionError, inspect_sample
+
+        try:
+            inspection_result = inspect_sample(settings, args.run_id, args.game_id)
+        except InspectionError as exc:
+            LOGGER.error("원본 검사 실패: %s", exc)
+            return 5
+        print(json.dumps(inspection_result, ensure_ascii=False, indent=2, allow_nan=False))
+        return 0
+
+    if args.command == "collect-sample":
+        # 명시적 수집 분기에서만 네트워크·쓰기 기능을 불러온다.
+        from kbo_insight_ai.collection import collect_hf_sample, collect_sample
+
+        try:
+            if args.source == "hf":
+                run_dir, accepted = collect_hf_sample(settings)
+            else:
+                run_dir, accepted = collect_sample(settings, args.game_id, args.inning)
+        except ValueError:
+            LOGGER.error("수집 대상 오류: 공개 경기 ID와 이닝을 확인하세요.")
+            return 2
+        except OSError:
+            LOGGER.error("원본 또는 이력 저장 실패: 권한·공간·파일 상태를 확인하세요.")
+            return 4
+        print(json.dumps(
+            {
+                "run_dir": str(run_dir),
+                "status": ("artifact_verified" if args.source == "hf" else "structure_validated") if accepted else "failed",
+                "semantic_validation": "not_performed",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ))
+        if not accepted:
+            LOGGER.error("표본 수집 실패: 실행 폴더의 result.json을 확인하세요.")
+            return 3
+        LOGGER.info("원본 저장·재열람 및 출처별 최소 검사 완료")
+        return 0
+
     LOGGER.info("환경·설정 확인 완료")
 
     result: dict[str, str | int] = {

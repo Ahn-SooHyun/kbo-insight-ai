@@ -6,8 +6,8 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 
 [저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [예측·평가 계약](docs/standards/project_contract.md)
 
-> **현재 제공 범위 · 2026년 11월 10일**  
-> 개발·예측·평가 기준 문서와 최소 Python 개발 기반을 제공한다. 현재 실행 기능은 도움말과 읽기 전용 환경·설정 확인이다. Windows AMD64·Python 3.12.15·uv 0.13.7 환경에서 패키지 설치·import·모듈 및 설치된 CLI·경로 확인과 테스트 11개 통과를 확인했다. 실제 수집·학습·예측·시뮬레이션과 성능 결과는 포함하지 않는다. 개발 흐름의 [현재 확인 범위](docs/planning/development_workflow.md#status)는 해당 문서에 인수된 증거의 범위를 나타낸다.
+> **현재 제공 범위 · 2026년 11월 11일**  
+> 도움말·읽기 전용 환경 확인과 명시적인 이닝 원본 표본 수집 명령을 제공한다. 프로젝트 기반·예측 기준 구축에서 확인한 기존 동작과 이번 수집 구현의 검증은 구분한다. HF 고정 배포 파일 하나의 원본 확보·게시 해시 대조·필드/행 표본 재독을 확인했다. Naver relay는 Timeout으로 실패했으며 전체 기간 포함·사건 의미·품질 통과·학습·예측·시뮬레이션은 아직 확인하지 않았다. 개발 흐름의 [현재 확인 범위](docs/planning/development_workflow.md#status)는 그 문서에 인수된 증거만 나타낸다.
 
 | 목적                | 읽을 곳                                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -69,9 +69,13 @@ kbo-insight-ai/
 │   └── kbo_insight_ai/
 │       ├── __init__.py
 │       ├── __main__.py
-│       └── settings.py
+│       ├── settings.py
+│       ├── collection.py
+│       └── inspection.py
 ├── tests/
-│   └── test_foundation.py
+│   ├── test_foundation.py
+│   ├── test_collection.py
+│   └── test_inspection.py
 └── docs/
     ├── planning/
     │   └── development_workflow.md
@@ -79,19 +83,21 @@ kbo-insight-ai/
         └── project_contract.md
 ```
 
-| 위치                             | 책임                                                    |
-| -------------------------------- | ------------------------------------------------------- |
-| `.github/`                       | Issue·PR 양식                                           |
-| `.python-version`                | 기본 Python 요청 버전                                   |
-| `pyproject.toml`                 | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
-| `kbo.toml`                       | 현재 사용하는 경로·Seed·로그 설정                       |
-| `.gitignore`                     | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
-| `src/kbo_insight_ai/__init__.py` | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
-| `src/kbo_insight_ai/__main__.py` | 도움말·설정 확인 명령과 CLI 로그                        |
-| `src/kbo_insight_ai/settings.py` | 설정 읽기·타입 및 범위 검증·경로 해석                   |
-| `tests/test_foundation.py`       | 설정·경로·오류·읽기 전용 동작 검증                      |
-| `docs/planning/`                 | 개발 순서·선행 관계·증거·인수 기준                      |
-| `docs/standards/`                | 예측·평가·저장·설정의 상세 계약                         |
+| 위치                               | 책임                                                    |
+| ---------------------------------- | ------------------------------------------------------- |
+| `.github/`                         | Issue·PR 양식                                           |
+| `.python-version`                  | 기본 Python 요청 버전                                   |
+| `pyproject.toml`                   | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
+| `kbo.toml`                         | 현재 사용하는 경로·Seed·로그 설정                       |
+| `.gitignore`                       | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
+| `src/kbo_insight_ai/__init__.py`   | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
+| `src/kbo_insight_ai/__main__.py`   | 도움말·설정 확인 명령과 CLI 로그                        |
+| `src/kbo_insight_ai/settings.py`   | 설정 읽기·타입 및 범위 검증·경로 해석                   |
+| `src/kbo_insight_ai/collection.py` | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
+| `tests/test_collection.py`         | 합성 응답 기반 수집·실패·보존 검증                      |
+| `tests/test_foundation.py`         | 설정·경로·오류·읽기 전용 동작 검증                      |
+| `docs/planning/`                   | 개발 순서·선행 관계·증거·인수 기준                      |
+| `docs/standards/`                  | 예측·평가·저장·설정의 상세 계약                         |
 
 현재 구조는 소스·테스트·문서를 폴더로 분리하고, 패키지 내부에서는 명령 진입점과 설정 책임을 파일로 분리한다. 패키지의 Python 파일이 3개인 현재 단계에서는 설정이나 CLI를 별도 하위 패키지로 더 나누지 않는다.
 
@@ -126,14 +132,14 @@ kbo-insight-ai/
 | 가상환경                 | 프로젝트의 `.venv`                    |
 | 개발 설치                | 편집 가능 설치                        |
 | 빌드 도구                | `uv_build==0.13.7`                    |
-| 실행 의존성              | 없음. Python 표준 라이브러리 사용     |
-| 테스트 의존성            | 없음. 표준 라이브러리 `unittest` 사용 |
+| 실행 의존성              | 기본 수집은 표준 라이브러리, inspection은 선택 PyArrow 사용     |
+| 테스트 의존성            | unittest, 선택 inspection 테스트는 PyArrow 사용 |
 | 설치 이름 / import 이름  | `kbo-insight-ai` / `kbo_insight_ai`   |
 | 설치되는 CLI 이름        | `kbo-insight`                         |
 
 Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insight-ai 0.1.0의 편집 가능 설치·의존성 검사·import·기본 명령과 테스트 11개 통과를 확인했다. 다른 OS와 다른 Python 3.12 패치 버전도 별도의 실행 검증이 필요하다.
 
-실행 의존성이 없으므로 현재 별도 의존성 목록이나 lock 파일은 두지 않는다. Python 기본 요청과 빌드 도구는 각각 `.python-version`과 `pyproject.toml`에 고정한다. 향후 실행 의존성을 추가할 때는 재현 가능한 잠금 방식도 함께 정한다.
+기본 수집의 실행 의존성은 없지만 선택 inspection 의존성 pyarrow==26.0.1과 uv.lock이 현재 존재한다. Python 기본 요청과 빌드 도구는 각각 `.python-version`과 `pyproject.toml`에 고정한다. 향후 실행 의존성을 추가할 때는 재현 가능한 잠금 방식도 함께 정한다.
 
 설치 과정에서 uv는 호환되는 내장 빌드 도구 또는 고정된 빌드 패키지를 사용한다. [uv 빌드 문서](https://docs.astral.sh/uv/concepts/build-backend/)에서 패키지 구조와 빌드 방식을 확인할 수 있다.
 
@@ -141,7 +147,7 @@ Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insig
 
 ### 3.2 설정 파일과 우선순위
 
-설정은 프로젝트 기준 디렉터리의 `kbo.toml` 한 파일에서 읽는다. 설정 파일은 UTF-8 인코딩이어야 하며, 인코딩 오류와 TOML 문법 오류는 설정 오류로 처리한다. 다음 8개 항목이 모두 필수이며, 누락하거나 지원하지 않는 항목을 추가하면 오류다.
+설정은 프로젝트 기준 디렉터리의 `kbo.toml` 한 파일에서 읽는다. 설정 파일은 UTF-8 인코딩이어야 하며, 인코딩 오류와 TOML 문법 오류는 설정 오류로 처리한다. 다음 15개 항목이 모두 필수이며, 누락하거나 지원하지 않는 항목을 추가하면 오류다.
 
 | 설정            | 타입·허용 범위                                          | 제공 파일의 값   |
 | --------------- | ------------------------------------------------------- | ---------------- |
@@ -153,6 +159,14 @@ Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insig
 | `cache_dir`     | 비어 있지 않은 경로 문자열                              | `.cache`         |
 | `seed`          | 0~4294967295의 정수. Boolean 제외                       | `42`             |
 | `log_level`     | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` 중 하나 | `INFO`           |
+
+| `collection_base_url` | 허용한 공개 원천 주소 하나만 사용 | `https://api-gw.sports.naver.com` |
+| `collection_timeout_seconds` | 1~30 정수, Boolean 제외 | `30` |
+| `collection_retries` | 0~2 정수, 최초 요청 뒤 추가 시도 수 | `0` |
+| `hf_collection_base_url` | 허용한 공개 HF 배포 주소 | `https://huggingface.co` |
+| `hf_collection_max_bytes` | 1~20971520 정수, Naver와 별도 저장 상한 | `20971520` |
+| `hf_collection_max_redirects` | 0~3 정수, HF 공식 호스트 전송 상한 | `3` |
+| `collection_max_bytes` | 1~1048576 정수, 저장할 응답 bytes 상한 | `1048576` |
 
 표의 값은 제공 파일에 적힌 값이며, 항목 누락 시 적용되는 대체 기본값은 아니다. 로그 수준은 대문자만 허용한다. Seed는 후속 실행에서 재사용할 설정값으로 보관하며 현재 난수 생성이나 모델 학습을 실행하지 않는다.
 
@@ -197,7 +211,7 @@ Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insig
 
 `models/`는 모델 소스 코드가 아닌 저장 자산의 위치다. 실행 소스는 `src/kbo_insight_ai/` 아래에 둔다.
 
-원본 보존·부모 자료·버전·실행 식별자와 이력의 의미는 [계약 10절](docs/standards/project_contract.md#reproducibility)을 따른다. 현재 기반은 경로를 해석하고 검증한다. 디렉터리 생성·원본 쓰기·수집 및 전체 실행 이력 시스템은 구현하지 않는다.
+원본 보존·부모 자료·버전·실행 식별자와 이력의 의미는 [계약 10절](docs/standards/project_contract.md#reproducibility)을 따른다. 설정 확인은 경로 해석·검증만 수행한다. 명시적인 collect-sample 실행은 원본과 시도 이력을 생성한다. 전체 수집·변환·학습 이력 시스템은 아직 구현하지 않는다.
 
 ### 3.5 로그·Secret·Git 추적
 
@@ -211,15 +225,75 @@ Python 3.12.15와 uv 0.13.7을 사용하는 Windows AMD64 환경에서 kbo-insig
 
 자료 경로를 변경하면 해당 위치의 추적 제외 규칙도 함께 검토해야 한다. 설정을 바꾼다고 `.gitignore`가 자동 변경되지는 않는다. 저장소 밖의 절대경로를 쓰면 그 위치를 관리하는 저장소의 추적 규칙도 별도로 확인한다.
 
-### 3.6 후속 수집 코드 연결
+### 3.6 명시적인 원본 표본 수집
 
-CT-2의 실제 수집 구현은 `src/kbo_insight_ai/` 아래에 추가하고 `settings.py`의 `load_settings`를 재사용한다. 수집 모듈은 실제 구현 시 만들며 import나 `check`에서 자동 실행하지 않는다.
+`collection.py`는 `load_settings`가 반환한 원본 경로·원천 주소·요청 제한을 사용한다. `collect-sample` 분기에서만 네트워크·디렉터리 생성·파일 쓰기가 발생한다. import·도움말·기존 check는 수집하지 않는다. 바이트코드 쓰기를 막을 때는 Python의 `-B`를 사용한다.
 
-API URL·Timeout·Retry 등 공통 설정이 필요해지면 `kbo.toml`과 `settings.py`의 타입·검증·테스트를 함께 확장한다. Secret은 공개 설정 파일에 넣지 않는다. 현재는 수집기·재시도 로직·API용 빈 설정을 구현하지 않는다.
+대상은 공개 원본에서 확인한 경기 ID 하나와 이닝 하나다. ID 형식 검사는 실제 경기 존재 확인을 대신하지 않는다. 현재 진단 설정은 대기 제한 30초·재시도 0회로 한 번만 요청하고, 응답의 저장 크기는 1 MiB 이하로 제한한다. 이전 10초·재시도 1회 실행은 두 시도 모두 Timeout이었으며, 30초 단일 요청도 Timeout으로 실패했다. 제한 초과 확인을 위해 메모리에서 한 바이트를 더 읽을 수 있으나 초과 응답은 부분 실패로 기록한다. 자동 전송은 차단한다. timeout은 네트워크 대기 제한이며 전체 실행시간의 상한은 아니다.
 
-수집·변환 이력과 원본의 별도 버전 저장은 데이터 구축에서, 학습·예측·평가 자산의 연결은 해당 후속 단계에서 구현한다. 실제 필드·수집 기간·조건부 기능 판정·학습 날짜는 [확정 책임](docs/standards/project_contract.md#decisions)을 따른다.
+HTTP 500/502/503/504와 시간 초과·일시 네트워크/불완전 응답만 설정 횟수 안에서 재시도한다. 401/403/429·주소 전송·빈/손상/구조 변경 응답은 자동 재시도하지 않는다. 차단을 우회하거나 브라우저·인증 정보를 흉내 내지 않는다.
 
-기반의 설치·import·경로·설정·부작용 검증은 [개발 기반 기준](docs/planning/development_workflow.md#task-2), 저장 원본·모델로 재실행하는 검증은 [최종 재실행 기준](docs/planning/development_workflow.md#task-12)을 따른다.
+원본과 이력은 `raw_dir/collection/{run_id}/`에 배타 생성한다.
+
+| 파일            | 의미                                                             |
+| --------------- | ---------------------------------------------------------------- |
+| request.json    | 대상·공개 요청 조건·요청 제한·코드 해시·참고 revision            |
+| attempt-NN.bin  | 응답 bytes. 정상/실패 여부와 완전성은 대응 JSON에서 확인         |
+| attempt-NN.json | 시도별 시각·상태·실패 코드·크기·경로·SHA-256·완전성              |
+| result.json     | 마지막 시도 결과. 이 파일이 없으면 완료된 수집으로 취급하지 않음 |
+
+응답이 없거나 HTTP 오류 본문을 읽지 않은 경우 bin 파일은 없다. 부분 응답은 `body_complete=false`이며 정상 원본으로 사용하지 않는다. 원본은 저장 후 재열람해 해시를 검사한다. 반복 실행은 별도 run_id를 사용하며 기존 파일을 덮어쓰지 않는다. 쓰기·공간 부족으로 중단된 폴더도 자동 삭제하지 않는다.
+
+`structure_validated`는 최소 JSON 구조 검사만 통과했다는 뜻이다. 사건 순서·중복·실제 공·타석 경계·교체/주루/번트·대상 응답 일치·좌표 의미·전체 포함·품질 통과를 보증하지 않는다. 추가 필드는 허용하지만 필수 구조·타입이 달라지면 실패한다. `semantic_validation=not_performed`를 유지한다.
+
+관측 시각은 UTC로 남기고 최초 공개 시각은 확인되지 않으면 null이다. 원천 API의 명시 버전은 미확인이므로 null이며 참고 수집 코드 revision과 실제 적용 파일 hash를 별도로 남긴다. declared_base_commit은 인수 기준으로, 현재 Git HEAD 주장과 구분한다. URL·예외 원문·환경 전체·인증 헤더를 무차별 기록하지 않는다.
+
+기본 실행은 확인된 Python 모듈 진입점이다. 설치 실행 파일 정책 제한을 우회하지 않는다. 다음 명령은 합성 응답 테스트 통과 뒤 별도로 실행하며, 실제 응답 성공은 아직 확인하지 않았다.
+
+```powershell
+& "D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe" -B -m kbo_insight_ai --project-root "D:/Programming/kbo-insight-ai" collect-sample --game-id "20230401HHWO02023" --inning 1
+```
+
+정상 구조/저장은 종료 0, 인자·설정 오류 2, 수집/응답 검사 실패 3, 원본·이력 저장 실패 4다. 종료 0도 #6 완료나 #7 착수 승인이 아니다. 실제 수집 전 출처 조건을 확인하고, 수집 후 원본/hash/이력과 의미 검증 근거를 인계한다. 캐시는 유일한 원본으로 사용하지 않는다.
+
+계약의 D01·D04~D11은 실제 근거 확인 전 미확정이다. 전체 기간·학습 날짜·조건부 최종 판정·M4 산식은 이번 구현에서 결정하지 않는다. 기존 테스트는 합성 응답을 실제 표본으로 보고하지 않는다.
+
+### 3.7 고정 버전 배포 파일 표본
+
+Naver의 두 실행은 각각 10초 두 시도, 30초 한 시도 모두 HTTP 상태·본문 없이 Timeout으로 끝났다. TCP·별도 TLS 성공만으로 수집 당시 원인을 확정하지 않으며 이 경로를 성공으로 기록하지 않는다. 동일 요청은 반복하지 않는다.
+
+대체 원천은 공개 배포된 `slothman3878/kbo_playbyplay`의 2023년 파일 하나다. 물리 배포 단위가 시즌 파일이므로 1이닝보다 크다. 파일 전체를 원본으로 보존한 뒤 일부 경기/필드를 검토하는 표본이며, 전체 기간 수집이나 2023년 전체 품질 통과를 뜻하지 않는다.
+
+| 항목 | 고정 값 |
+|---|---|
+| revision | 6afc8af044e3bba5f326b688e8cb41d7ff7065ec |
+| 파일 | v0/kbo_pbp_2023.parquet |
+| 게시 크기 | 17,327,447 bytes |
+| 게시 SHA-256 | 818f6016655b02fe48b8118281d1b04bfe3548d376fdc70131a41ea539341edb |
+
+[파일/해시 근거](https://huggingface.co/datasets/slothman3878/kbo_playbyplay/blob/main/v0/kbo_pbp_2023.parquet)와 [revision의 파일 크기/해시](https://huggingface.co/datasets/slothman3878/kbo_playbyplay/commit/6afc8af044e3bba5f326b688e8cb41d7ff7065ec)를 조사했다. 요청은 main 대신 위 revision으로 고정한다. 원문 commentary가 없는 파생 배포 파일이며 라이선스/원출처 조건과 사건 의미는 별도 확인한다.
+
+명시적인 `collect-sample --source hf`만 이 파일을 요청한다. 별도 일회용 수집기 없이 기존 통신·원본·해시·시도/결과 저장을 재사용한다. Naver의 1 MiB 상한과 전송 금지 정책은 유지한다. HF는 별도 최대 20 MiB·재시도 없음·최대 3회 주소 전송으로 총 HTTP 요청 최대 4회다. HF 파일 다운로드는 [공식 문서](https://huggingface.co/docs/hub/datasets-downloading)에 명시된 저장/CDN 호스트로 전송될 수 있으므로 HTTPS의 huggingface.co 및 그 하위, *.hf.co만 허용한다. 다른 호스트·HTTP·사용자정보·비표준 포트·fragment는 거절한다. 서명 query나 Location은 로그/manifest에 저장하지 않는다. 별도 인증 정보·브라우저 위장은 사용하지 않는다. 실제 전송/CDN 접근 성공은 아직 확인하지 않았다.
+
+정상 파일은 `attempt-01.parquet`로 보존한다. 실패 bytes는 bin과 실패 상태로 남긴다. 게시 크기·SHA-256·Parquet 시작/끝 표식을 대조한 경우에만 `artifact_verified`를 사용한다. **이는 파일 동일성 확인이며 Parquet 필드 파싱·ID 연결·사건 검증 성공이 아니다.** `semantic_validation=not_performed`를 유지한다. 파싱 라이브러리는 아직 추가하지 않았으며, 실제 확보 후 필요한 버전/재현 방식을 확인한다. 캐시가 아닌 raw_dir의 원본·해시·이력을 인계한다.
+
+```powershell
+& "D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe" -X utf8 -B -m kbo_insight_ai --project-root "D:/Programming/kbo-insight-ai" collect-sample --source hf
+```
+
+이 명령은 사용자 실행으로 HTTP 200·종료 0을 확인했고, 담당자가 저장된 17,327,447 bytes와 게시 해시를 대조했다. run_id는 96a971b890474a87946532f7c5ace4ea다. 실제 HTTP 요청 2회·주소 전송 1회였다. Naver 실패와 남은 핵심/조건부 자료 제한은 별도로 유지한다.
+
+### 3.8 확보한 HF 원본의 읽기 전용 검사
+
+`inspect-sample --run-id 실행ID`는 원본·수집 이력의 연결과 고정 파일 해시를 다시 확인한 뒤 실제 Arrow 필드/타입/null 수, 파일 메타데이터, 원본 행 번호가 붙은 표본 사례를 JSON으로 출력한다. 새 HTTP 요청·원본/이력 변경·디렉터리 생성을 하지 않는다. `quality_status=not_assessed`를 유지하며 전체 품질 검사의 성공을 반환하지 않는다. 검사 실패는 종료 코드 5다.
+
+검사에는 선택 설치 `inspection`의 `pyarrow==26.0.1`을 사용한다. 현재 개발 환경의 설치 버전·선택 의존성 선언·uv.lock에서 같은 버전을 확인했다. 이 선언과 잠금 파일은 이미 존재한 것을 재사용하며 이번 검사 연결에서 덮어쓰지 않았다. 재현 환경은 잠금 파일의 inspection extra로 준비하며 현재 환경의 재설치는 필요 없다. 기본 수집·도움말·check는 PyArrow를 불러오지 않는다.
+
+```powershell
+& "D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe" -X utf8 -B -m kbo_insight_ai --project-root "D:/Programming/kbo-insight-ai" inspect-sample --run-id "96a971b890474a87946532f7c5ace4ea"
+```
+
+파일의 행 수/날짜/경기 ID 수는 읽은 파일의 관측값이며 공식 일정 대비 포함률·시즌 완료·전체 품질 통과가 아니다. 같은 타석 키에서 참가자 ID가 달라지는 사례는 변화 후보로 기록하며, 원문 교체 역할·공식 결과 귀속·미완료 타석의 주루 종류는 독립 원천으로 확인해야 한다. 게시 명세만으로 실제 행을 모두 최종 참가자라고 가정하지 않는다. 원본 좌표와 null을 수정하거나 0으로 채우지 않는다.
 
 <a id="outputs"></a>
 
@@ -250,7 +324,7 @@ API URL·Timeout·Retry 등 공통 설정이 필요해지면 `kbo.toml`과 `sett
 | 같은 설정인데 결과가 달라졌는가               | [자산·실행 추적](docs/standards/project_contract.md#reproducibility)                                                                                                     |
 | 새 기능·모델·미확정 항목이 필요한가           | [범위](docs/standards/project_contract.md#scope) · [모델 수](docs/standards/project_contract.md#model-count) · [확정 절차](docs/standards/project_contract.md#decisions) |
 
-정상 종료 코드는 0, 설정 오류와 잘못된 명령의 종료 코드는 2다. `check` 성공은 설정 읽기·타입·범위·기본 경로 조건을 통과했다는 뜻이다. 자료 존재·쓰기 권한·수집 가능·학습 가능을 보장하지 않는다. 예상하지 못한 실행 오류를 설정 오류로 간주하거나 성공으로 처리하지 않는다.
+정상 종료 코드는 0, 설정 오류와 잘못된 명령은 2, 수집 실패는 3, 저장 실패는 4다. `check` 성공은 설정 읽기·타입·범위·기본 경로 조건을 통과했다는 뜻이다. 자료 존재·쓰기 권한·수집 가능·학습 가능을 보장하지 않는다. 예상하지 못한 실행 오류를 설정 오류로 간주하거나 성공으로 처리하지 않는다.
 
 테스트는 정상 설정·설정 오류·다른 실행 위치·공백과 한글 경로·상대와 절대경로·없는 경로·파일 충돌·저장 경로 겹침을 확인한다. 권한 오류 일부는 실제 권한 변경 대신 모의 예외로 검증한다.
 
