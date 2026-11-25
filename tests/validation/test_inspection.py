@@ -16,10 +16,10 @@ except ImportError:
     pa = None
     pq = None
 
-from kbo_insight_ai.validation import raw_sample as inspection
-from kbo_insight_ai.__main__ import main
-from kbo_insight_ai.ingestion.pilot import HF_FILENAME, HF_REVISION, sha256
-from kbo_insight_ai.settings import load_settings
+from src.validation import raw_sample as inspection
+from src.__main__ import main
+from src.ingestion.pilot import HF_FILENAME, HF_REVISION, sha256
+from src.settings import load_settings
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -160,7 +160,7 @@ class InspectionTests(unittest.TestCase):
     def test_cli_inspection_error_has_separate_exit_code(self) -> None:
         """원본 검사 실패를 수집 성공이나 설정 성공으로 반환하지 않는다."""
         with (
-            patch("kbo_insight_ai.__main__.load_settings", return_value=self.settings),
+            patch("src.__main__.load_settings", return_value=self.settings),
             patch.object(inspection, "inspect_sample",
                          side_effect=inspection.InspectionError("검사 오류 대역")),
             redirect_stdout(StringIO()),

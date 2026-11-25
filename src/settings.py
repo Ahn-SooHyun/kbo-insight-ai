@@ -101,12 +101,13 @@ def _project_root(
         selected = environ.get("KBO_PROJECT_ROOT")
 
     if selected is None:
-        module_path = Path(__file__).resolve()
-        if module_path.parents[1].name != "src":
+        source_dir = Path(__file__).resolve().parent
+        source_root = source_dir.parent
+        if source_dir.name != "src" or not (source_root / "pyproject.toml").is_file():
             raise SettingsError(
                 "project_root: --project-root 또는 KBO_PROJECT_ROOT가 필요합니다."
             )
-        selected = module_path.parents[2]
+        selected = source_root
 
     try:
         root = Path(selected)

@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
-from kbo_insight_ai.settings import Settings
+from ..settings import Settings
 
 
 IMPLEMENTATION_VERSION = "ct2-01-p3"

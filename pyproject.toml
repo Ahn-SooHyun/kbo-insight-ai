@@ -14,7 +14,9 @@ dependencies = []
 inspection = ["pyarrow==26.0.1"]
 
 [project.scripts]
-kbo-insight = "kbo_insight_ai.__main__:main"
+kbo-insight = "src.__main__:main"
 
 [tool.uv.build-backend]
+module-name = "src"
+module-root = ""
 source-include = ["kbo.toml", "tests/**"]

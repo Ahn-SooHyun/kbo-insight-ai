@@ -5,14 +5,14 @@ import json
 from pathlib import Path
 import re
 
-from kbo_insight_ai.ingestion.pilot import (
+from ..ingestion.pilot import (
     HF_FILENAME,
     HF_REVISION,
     HF_SAMPLE_BYTES,
     HF_SAMPLE_SHA256,
     sha256,
 )
-from kbo_insight_ai.settings import Settings
+from ..settings import Settings
 
 
 INSPECTION_VERSION = "ct2-01-inspection-1"
