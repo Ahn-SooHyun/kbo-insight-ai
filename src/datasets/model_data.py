@@ -20,11 +20,11 @@ from ..validation.standard_quality import AUDIT_SCHEMA, AUDIT_TABLES, _digest_ta
 
 
 LOGGER = logging.getLogger(__name__)
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 EVENT_MODELS = ("m1", "m2", "m4", "m5")
 MODELS = (*EVENT_MODELS, *model_players.ROLES.values())
 SPLITS = ("train", "validation", "test")
-CANDIDATES = {"m1": "eligible_games", "m2": "eligible_pa", "m4": "eligible_states", "m5": "eligible_pitches"}
+CANDIDATES = {"m1": "eligible_games", "m2": "plate_appearances", "m4": "eligible_states", "m5": "eligible_pitches"}
 CATEGORICAL = {"competition", "half", "phase", "player_id", "batter_id", "pitcher_id", "previous_pitch_type", "previous_pitch_result",
                "known_team_id", "home_team_id", "away_team_id", "perspective_team_id"}
 
@@ -124,11 +124,63 @@ def validate(db: sqlite3.Connection) -> dict[str, object]:
             require(scalar(db, f"SELECT COUNT(*) FROM {index}") == scalar(db, f"SELECT COUNT(*) FROM source.{source}") * (2 if model == "m4" else 1), f"후보 분모 불일치: {model}")
             require(not scalar(db, f"SELECT COUNT(*) FROM (SELECT game_id FROM {index} GROUP BY game_id HAVING COUNT(DISTINCT split)>1)"), f"경기 분할 오류: {model}")
             require(not scalar(db, f"SELECT COUNT(*) FROM {index} i JOIN game_context g USING(game_id) WHERE i.sample_date<>g.date OR i.split<>g.split"), f"경기 날짜/분할 불일치: {model}")
+            if model == "m2":
+                require(n == scalar(db, "SELECT COUNT(*) FROM source.eligible_pa"), "M2 유효 타석 분모 불일치")
+                require(not scalar(db, """SELECT COUNT(*) FROM m2_index i
+                  LEFT JOIN source.eligible_pa a USING(game_id,pa_number)
+                  WHERE (i.status='eligible')<>(a.game_id IS NOT NULL)
+                     OR (i.status='excluded' AND i.exclusion_reason IS NULL)
+                     OR (i.status='eligible' AND i.exclusion_reason IS NOT NULL)"""), "M2 상태·제외 사유 불일치")
+                require(not scalar(db, """SELECT COUNT(*) FROM m2_index i JOIN m2_inputs x USING(sample_id)
+                  JOIN m2_targets t USING(sample_id) JOIN source.eligible_pa a USING(game_id,pa_number)
+                  WHERE x.batter_id IS NOT a.start_batter_id OR x.pitcher_id IS NOT a.start_pitcher_id
+                     OR t.target_event IS NOT a.event OR i.credited_batter_candidate IS NOT a.credited_batter_candidate
+                     OR i.credited_pitcher_candidate IS NOT a.credited_pitcher_candidate"""), "M2 참가자/정답 귀속 불일치")
         else:
             require(not scalar(db, f"SELECT COUNT(*) FROM {index} WHERE strftime('%w',sample_date)<>'1' OR last_observed_date>=sample_date"), f"월요일/모집단 시점 오류: {model}")
+            require(not scalar(db, f"""SELECT COUNT(*) FROM {index} i WHERE last_observed_date IS NOT (
+                SELECT MAX(h.date) FROM player_history_base h WHERE h.player_id=i.player_id AND h.role=i.role
+                  AND h.season=i.season AND h.date<i.sample_date AND (h.conflict_date IS NULL OR h.conflict_date>=i.sample_date)
+              )"""), f"시점별 선수 식별 모집단 오류: {model}")
+            role = model.removeprefix("m3_")
+            require(not scalar(db, f"""WITH dates AS (SELECT DISTINCT season,sample_date FROM {index}), expected AS (
+              SELECT DISTINCT h.season,d.sample_date,h.player_id FROM dates d JOIN player_history_base h
+                ON h.season=d.season AND h.role='{role}' AND h.date<d.sample_date
+                AND (h.conflict_date IS NULL OR h.conflict_date>=d.sample_date)
+              ) SELECT COUNT(*) FROM expected e LEFT JOIN {index} i USING(season,sample_date,player_id)
+                WHERE i.sample_id IS NULL"""), f"시점별 모집단 누락: {model}")
             require(not scalar(db, f"SELECT COUNT(*) FROM {targets} t JOIN {index} i USING(sample_id) CROSS JOIN config c WHERE t.window_start<>i.sample_date OR (t.usable=1 AND (t.ready_date IS NULL OR t.ready_date>CASE i.split WHEN 'train' THEN c.validation_start WHEN 'validation' THEN c.test_start ELSE c.observation_end END OR t.status NOT IN ('valid_observed','zero_observed')))"), f"정답 완료/절단 오류: {model}")
             require(not scalar(db, f"SELECT COUNT(*) FROM {targets} WHERE (horizon='7d' AND window_end<>date(window_start,'+7 days')) OR (horizon='28d' AND window_end<>date(window_start,'+28 days')) OR (usable=0 AND target_games IS NOT NULL) OR (status='zero_observed' AND observed_games<>0)"), f"기간/관측 0 오류: {model}")
             require(not scalar(db, f"SELECT COUNT(*) FROM (SELECT DISTINCT i.season,i.sample_date,i.split,t.horizon,t.window_start,t.window_end FROM {targets} t JOIN {index} i USING(sample_id) WHERE t.usable=1) a JOIN m3_window_games w ON w.season=a.season AND w.anchor_date=a.sample_date AND w.horizon=a.horizon JOIN game_context g USING(game_id) WHERE g.date<a.window_start OR g.date>=a.window_end OR g.split<>a.split"), f"기간 정답 경기 혼입: {model}")
+            # 생성된 위험 집계뿐 아니라 실제 경기/팀/역할 감사표를 독립적으로 대조한다.
+            require(not scalar(db, f"""SELECT COUNT(*) FROM {targets} WHERE usable=1 AND
+              (missing_games>0 OR team_risky_games>0 OR player_rejected>0 OR
+              (status='zero_observed' AND (league_risky_games>0 OR league_identity_conflicts>0 OR league_rejected_rows>0)))"""), f"불완전 정답 사용: {model}")
+            require(not scalar(db, f"""WITH relevant AS (
+                SELECT DISTINCT i.season,i.sample_date,t.horizon,r.team_id FROM {targets} t
+                JOIN {index} i USING(sample_id) JOIN m3_window_teams r ON r.sample_id=t.sample_id AND r.horizon=t.horizon AND r.role=i.role
+                WHERE t.usable=1
+              ) SELECT COUNT(*) FROM relevant a JOIN m3_window_games w
+                ON w.season=a.season AND w.anchor_date=a.sample_date AND w.horizon=a.horizon
+              JOIN player_game_role_quality q ON q.game_id=w.game_id AND q.team_id=a.team_id AND q.role='{role}'
+              WHERE q.risky=1"""), f"팀·역할 품질 위험 정답 사용: {model}")
+            require(not scalar(db, f"""WITH zero_windows AS (
+                SELECT DISTINCT i.season,i.sample_date,t.horizon FROM {targets} t JOIN {index} i USING(sample_id)
+                WHERE t.usable=1 AND t.status='zero_observed'
+              ) SELECT COUNT(*) FROM zero_windows a JOIN m3_window_games w
+                ON w.season=a.season AND w.anchor_date=a.sample_date AND w.horizon=a.horizon
+              JOIN player_game_role_quality q ON q.game_id=w.game_id AND q.role='{role}'
+              WHERE q.risky=1 OR q.rejected_rows>0"""), f"미확인 0 사용: {model}")
+            require(not scalar(db, f"""SELECT COUNT(*) FROM {targets} t JOIN {inputs} x USING(sample_id)
+              WHERE x.known_team_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM m3_window_teams r
+                WHERE r.sample_id=t.sample_id AND r.role='{role}' AND r.horizon=t.horizon AND r.team_id=x.known_team_id)"""), f"정답 창 과거 팀 추적 누락: {model}")
+            require(not scalar(db, f"""SELECT COUNT(*) FROM {targets} t JOIN {index} i USING(sample_id)
+              JOIN player_history_base h ON h.player_id=i.player_id AND h.role=i.role AND h.season=i.season
+                AND h.date>=t.window_start AND h.date<t.observed_through_exclusive
+              WHERE NOT EXISTS (SELECT 1 FROM m3_window_teams r WHERE r.sample_id=t.sample_id AND r.role=i.role
+                AND r.horizon=t.horizon AND r.team_id=h.team_id)"""), f"정답 창 실제 관측 팀 추적 누락: {model}")
+            blocked = " OR ".join(f"{name} IS NOT NULL" for name in columns(db, targets) if name.startswith("target_"))
+            require(not scalar(db, f"SELECT COUNT(*) FROM {targets} WHERE usable=0 AND ({blocked})"), f"사용 불가 정답 값 잔존: {model}")
         result[model] = [dict(row) for row in db.execute(f"SELECT split,status,COUNT(*) rows,MIN(sample_date) first_date,MAX(sample_date) last_date FROM {index} GROUP BY split,status ORDER BY split,status")]
         if not event:
             result[model + "_target_status"] = [dict(row) for row in db.execute(f"SELECT i.split,t.horizon,t.status,t.usable,t.ratio_status,COUNT(*) rows FROM {targets} t JOIN {index} i USING(sample_id) GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5")]
@@ -136,6 +188,8 @@ def validate(db: sqlite3.Connection) -> dict[str, object]:
     require(not scalar(db, "SELECT COUNT(*) FROM m4_targets WHERE target_remaining_runs<0 OR target_result NOT IN ('win','loss','tie')"), "M4 정답 오류")
     require(not scalar(db, "SELECT COUNT(*) FROM (SELECT pair_id,COUNT(*) n,COUNT(DISTINCT split) s,COUNT(DISTINCT status) st FROM m4_index GROUP BY pair_id HAVING n<>2 OR s<>1 OR st<>1)"), "M4 상태 쌍 오류")
     require(not scalar(db, "SELECT COUNT(*) FROM m5_targets WHERE target_joint<>target_pitch_type||':'||target_pitch_result"), "M5 공동 범주 오류")
+    require(not scalar(db, """SELECT COUNT(*) FROM (SELECT game_id FROM player_game_role_quality GROUP BY game_id
+                HAVING COUNT(*)<>4)"""), "경기별 양 팀·두 역할 품질 행 누락")
     require(not scalar(db, "SELECT COUNT(*) FROM starter_pre_game WHERE previous_start_date>=date OR days_since_start<=0 OR previous_appearance_date>=date OR days_since_appearance<=0"), "선발 과거 이력 누수")
     return result
 
@@ -186,9 +240,9 @@ def contract(db: sqlite3.Connection) -> dict[str, object]:
             if name.startswith(("home_season_", "away_season_", "home_recent_", "away_recent_")) or name.endswith("days_since_game"):
                 origin = "eligible_games; 해당 팀·같은 시즌 정규경기; 날짜 엄격 이전, recent=28일; rf/ra=득점/실점 합, wins/ties=승/무; 미관측 집계 NULL"
             elif name.startswith(("batter_prior_", "pitcher_prior_", "batter_recent_", "pitcher_recent_")):
-                origin = "player_games+player_admission; 선수 역할별 날짜 엄격 이전, admitted 관측 합; recent=28일, rejected=제외 행수; 기회=PA/BF"
+                origin = "player_games+player_admission 경기별 품질 및 player_identity_evidence; 역할별 날짜 엄격 이전, 식별 충돌 최초 관측일 이후만 차단; recent=28일, rejected=제외 행수; 기회=PA/BF"
             elif model.startswith("m3_"):
-                origin = "player_games+player_admission; 기준 월요일 엄격 이전 같은 시즌의 관측 참가자·채택 집계; recent28=28일, last known team=당시 마지막 관측 팀; 미관측 통계 NULL"
+                origin = "player_games+player_admission 경기별 품질 및 player_identity_evidence; 기준 월요일 엄격 이전 같은 시즌의 당시 식별 참가자·집계, 미래 이름 충돌 소급 금지; recent28=28일, last known team=당시 마지막 관측 팀; 미관측 통계 NULL"
             elif name.startswith("previous_pitch_"):
                 origin = "pitches; 같은 타석 바로 이전 실제 공만, 연속 번호 및 앞선 source_row, 유효 코드 없으면 NULL"
             elif name in {"season", "competition", "home_team_id", "away_team_id"}:
@@ -196,10 +250,10 @@ def contract(db: sqlite3.Connection) -> dict[str, object]:
             else:
                 origin = {"m2": "eligible_pa; 타석 시작 상태 및 참가자", "m4": "eligible_states; 해당 pre/post 경계까지 관측 상태, 공수 팀 관점", "m5": "eligible_pitches; 현재 공 직전 상태·참가자와 해당 타석 이닝/공수"}[model]
             features[name] = {"origin_and_cutoff": origin, "null_policy": "NULL 보존; 학습 자료만으로 후속 대체/인코딩 fit", "key": "sample_id"}
-        target_definition = {"m1": "eligible_games: 종료 득점·승무패", "m2": "eligible_pa: 관측 확정 사건 코드",
+        target_definition = {"m1": "eligible_games: 종료 득점·승무패", "m2": "eligible_pa: 관측 확정 사건 코드; 전체 plate_appearances의 상태·제외 근거와 시작/종료/귀속 후보는 인덱스에 보존",
             "m4": "eligible_states+eligible_games: 타석 전후 동일 공격팀 관점 결과와 반이닝 종료 득점-현재 득점",
             "m5": "eligible_pitches: 현재 실제 공 구종/결과 및 공동 코드; 위치 제외"}.get(model,
-            "player_games+player_admission: 월요일부터 7/28일/잔여 정규시즌 관측 합; target_*는 usable만, observed_*는 부분도 보존; hit_rate=hits/AB, strikeout_rate=SO/(PA 또는 BF), 분모 0은 NULL")
+            "player_games+최종 player_admission: 월요일부터 7/28일/잔여 정규시즌 관측 합; player_game_role_quality와 m3_window_teams로 관련 팀 위험 검사, 0은 리그 역할 위험·격리 없는 관측에 한정; target_*는 usable만, observed_*는 부분도 보존; hit_rate=hits/AB, strikeout_rate=SO/(PA 또는 BF), 분모 0은 NULL")
         result[model] = {"inputs": features, "target_columns": columns(db, f"{model}_targets"), "target_definition": target_definition, "index": f"{model}_index",
                          "training_filter": "index.split='train'" + (" AND targets.usable=1 (기간·기록별 NULL mask)" if model.startswith("m3_") else " AND index.status='eligible'"),
                          "preprocessing": "학습 전처리는 이번에 fit하지 않음; sample_id/인덱스/정답/감사 열은 입력 제외"}
@@ -216,7 +270,7 @@ def build_model_data(settings: Settings, run_id: str, verification_id: str, vali
     config = {"version": VERSION, "validation_start": validation_start, "test_start": test_start,
               "observation_end": observation_end, "timezone": "Asia/Seoul", "seed": settings.seed,
               "code_sha256": {Path(module.__file__).name: sha256_file(Path(module.__file__)) for module in (model_events, model_players)},
-              "builder_sha256": sha256_file(Path(__file__)), "history_cutoff": "strict prior date; retrospective observed records"}
+              "builder_sha256": sha256_file(Path(__file__)), "history_cutoff": "strict prior date; identity conflict effective after first observed conflicting date; retrospective game-quality records"}
     key = fingerprint({"source": provenance, "config": config})
     output_root = settings.processed_dir / "model_data"
     previous = None
@@ -263,6 +317,8 @@ def build_model_data(settings: Settings, run_id: str, verification_id: str, vali
                 "config": config, "tables": hashes, "database_sha256": sha256_file(database), "splits": counts,
                 "eda_sha256": fingerprint(eda), "contract_sha256": fingerprint(definitions), "comparison": comparison,
                 "limitations": ["과거 실제 공개 판본·라인업·일정 스냅샷 미확인; 당시 공개 재현이 아닌 소급 관측 자료",
+                                "선수 이력은 이름 충돌의 최초 관측일 이전에 소급 제외하지 않으며 정답에는 최종 품질 판정을 유지",
+                                "M3 관련 팀·역할의 경기 상태·집계·식별·역할 행 위험 차단; 관측 0은 리그 해당 역할의 위험 및 격리 없는 경우만; 관련 팀 밖 미확인 이동/공식 등록은 보장하지 않음",
                                 "선수 집계는 관측 후보; 실제 팀 이동/등록·공식 출전 및 자책점 미확정; 잔여 시즌 완료 근거 없는 시즌 정답 금지",
                                 "장기 정답의 교차 기간 중첩 존재, cutoff 기준 마스크 적용; 0 및 분모 0 구분",
                                 "정규시즌/포스트시즌 공식 순위·동률·대진 규칙 후속 확인; 2019~2025 PS 결과 미확인",

@@ -27,9 +27,13 @@ class ModelDataTests(unittest.TestCase):
         self.db.execute("INSERT INTO source.games VALUES (?,?,2024,'regular',NULL,?,NULL,0,2,1,?,?,'Final',?,?,1,?,'game',0)", (
             key, key, day, away, home, 'home' if home > away else 'away' if away > home else 'tie', int(home == away), complete,
         ))
-        self.db.execute("INSERT INTO source.game_checks VALUES (?,'pbp',2,1,2,0,1,?,?,?)", (
+        self.db.execute("INSERT INTO source.game_checks VALUES (?,'pbp',0,0,0,0,1,?,?,?)", (
             key, int(not bad), int(not bad), 'half_ended_three_outs',
         ))
+        # 양 팀·두 역할의 관측 범위를 명시적으로 갖춘 작은 시험 자료다.
+        for team in (1, 2):
+            for role in ('hitter', 'pitcher'):
+                self.player(key, f'fixture-{team}-{role}', team, admitted=int(not bad), role=role)
 
     def player(self, key: str, player_id: str, team: int = 2, *, admitted: int = 1, role: str = 'hitter') -> None:
         self.db.execute("INSERT INTO source.player_games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,NULL,'pbp')", (
@@ -42,6 +46,7 @@ class ModelDataTests(unittest.TestCase):
         self.db.execute("""INSERT INTO source.plate_appearances VALUES (?,1,1,'top','b','b','p','p','b','p',?,?,?,1,2,1,
           0,0,0,NULL,NULL,NULL,0,1,3,NULL,NULL,NULL,'pbp',0,1)""", (key, changed, event, int(event is not None)))
         self.db.execute("INSERT INTO source.pa_audit VALUES (?,1,1,1,1,0,1,?)", (key, label))
+        self.db.execute("UPDATE source.game_checks SET physical_rows=2,pa_count=1,positive_pitch_rows=2 WHERE game_id=?", (key,))
         for number, pitch, result in ((1, 'FF', 'S'), (2, 'SL', 'H')):
             self.db.execute("""INSERT INTO source.pitches VALUES (?,1,?,'b','p',?,?,'S',150.0,0.1,2.0,
               0,?,0,0,0,NULL,NULL,NULL,1,1,1,'pbp',?)""", (key, number, pitch, result, number - 1, number - 1))
@@ -92,7 +97,8 @@ class ModelDataTests(unittest.TestCase):
         self.assertEqual(tuple(self.db.execute("SELECT target_pa,window_end,usable FROM m3_hitter_targets WHERE sample_id=? AND horizon='7d'",(key,)).fetchone()),(8,'2024-04-15',1))
         self.assertEqual(tuple(self.db.execute("SELECT target_pa,usable FROM m3_hitter_targets WHERE sample_id=? AND horizon='28d'",(key,)).fetchone()),(None,0))
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM m3_hitter_index WHERE player_id='future' AND sample_date='2024-04-08'").fetchone()[0],0)
-        self.assertEqual(tuple(self.db.execute("SELECT status,target_pa FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:absent' AND horizon='7d'").fetchone()),('zero_observed',0))
+        # 다른 선수의 격리 기록이 있는 기간에는 리그 내 실제 0을 확정하지 않는다.
+        self.assertEqual(tuple(self.db.execute("SELECT status,target_pa FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:absent' AND horizon='7d'").fetchone()),('unobserved',None))
         self.assertEqual(tuple(self.db.execute("SELECT status,target_pa FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:rejected' AND horizon='7d'").fetchone()),('missing',None))
         self.assertEqual(train_eda(self.db)['m1']['targets']['target_home_runs']['max'],1)
 
@@ -131,6 +137,81 @@ class ModelDataTests(unittest.TestCase):
         build_players(self.db,'2024-05-21')
         self.assertEqual(tuple(self.db.execute("SELECT usable,ratio_status,target_hit_rate,target_strikeout_rate FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:b' AND horizon='28d'").fetchone()),(1,'zero_denominator',None,None))
         self.assertEqual(_status(ready=True,admitted=1,rejected=0,missing_games=1,risky_games=0,league_risky_games=0,league_identity_conflicts=0),'partial')
+
+    def test_future_identity_does_not_rewrite_prior_population_or_event_history(self) -> None:
+        """시즌 전체 이름 충돌을 첫 관측일 이전 입력에 소급하지 않는다."""
+        for key, day in [('a','2024-04-01'),('b','2024-04-08'),('c','2024-04-09'),('d','2024-04-15'),('e','2024-05-05')]:
+            self.game(key,day,1,0)
+        for key in ('a','b','c','d'):
+            self.player(key,'b')
+        self.pa('b')
+        self.pa('d')
+        for row, game, name in ((0,'a','첫 이름'),(1,'c','다른 이름')):
+            self.db.execute("INSERT INTO source.non_pitch VALUES ('identity',?,?,1,NULL)", (row,game))
+            self.db.execute("INSERT INTO source.player_observations VALUES ('b',2024,2,?,'identity',?)", (name,row))
+        self.db.execute("UPDATE source.player_admission SET identity_ambiguous=1,admitted=0 WHERE player_id='b'")
+        build_events(self.db)
+        self.assertEqual(self.db.execute("SELECT conflict_date FROM player_identity_conflicts WHERE player_id='b'").fetchone()[0],'2024-04-09')
+        for model, suffix in (('m2','1'),('m5','1:1')):
+            self.assertEqual(self.db.execute(f"SELECT batter_prior_games FROM {model}_inputs WHERE sample_id=?", (f'b:{suffix}',)).fetchone()[0],1)
+            self.assertEqual(self.db.execute(f"SELECT batter_prior_games FROM {model}_inputs WHERE sample_id=?", (f'd:{suffix}',)).fetchone()[0],0)
+        build_players(self.db,'2024-05-21')
+        self.assertEqual(tuple(self.db.execute("SELECT known_team_id,season_pa FROM m3_hitter_inputs WHERE sample_id='2024:2024-04-08:b'").fetchone()),(2,4))
+        self.assertEqual(self.db.execute("SELECT usable FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:b' AND horizon='7d'").fetchone()[0],0)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM m3_hitter_index WHERE player_id='b' AND sample_date='2024-04-15'").fetchone()[0],0)
+        build_support(self.db)
+        validate(self.db)
+
+    def test_m3_team_role_audit_blocks_positive_and_zero_labels(self) -> None:
+        """선수가 해당 위험 경기에 관측되지 않아도 관련 팀·역할 위험을 검사한다."""
+        for key, day in [('a','2024-04-01'),('b','2024-04-08'),('c','2024-04-10'),('d','2024-05-05')]:
+            self.game(key,day,1,0)
+        for role in ('hitter','pitcher'):
+            self.player('a','positive',role=role)
+            self.player('b','positive',role=role)
+            self.player('a','absent',role=role)
+        self.db.execute("UPDATE source.player_admission SET team_mismatches=1,admitted=0 WHERE game_id='c' AND team_id=2 AND role='hitter'")
+        self.db.execute("UPDATE source.player_admission SET game_state_uncertain=1,admitted=0 WHERE game_id='c' AND team_id=2 AND role='pitcher'")
+        build_events(self.db)
+        build_players(self.db,'2024-05-21')
+        for role in ('hitter','pitcher'):
+            positive = self.db.execute(f"SELECT status,usable,team_risky_games,target_games FROM m3_{role}_targets WHERE sample_id='2024:2024-04-08:positive' AND horizon='7d'").fetchone()
+            absent = self.db.execute(f"SELECT status,usable,team_risky_games,target_games FROM m3_{role}_targets WHERE sample_id='2024:2024-04-08:absent' AND horizon='7d'").fetchone()
+            self.assertEqual(tuple(positive),('partial',0,1,None))
+            self.assertEqual(tuple(absent),('missing',0,1,None))
+        build_support(self.db)
+        validate(self.db)
+
+    def test_m3_clean_zero_and_missing_role_are_distinct(self) -> None:
+        for key, day in [('a','2024-04-01'),('b','2024-04-08'),('c','2024-05-05')]:
+            self.game(key,day,1,0)
+        self.player('a','absent',role='hitter')
+        self.player('a','absent',role='pitcher')
+        self.db.execute("DELETE FROM source.player_admission WHERE game_id='b' AND team_id=2 AND role='pitcher'")
+        self.db.execute("DELETE FROM source.player_games WHERE game_id='b' AND team_id=2 AND role='pitcher'")
+        build_events(self.db)
+        build_players(self.db,'2024-05-21')
+        self.assertEqual(tuple(self.db.execute("SELECT status,usable,target_games FROM m3_hitter_targets WHERE sample_id='2024:2024-04-08:absent' AND horizon='7d'").fetchone()),('zero_observed',1,0))
+        self.assertEqual(tuple(self.db.execute("SELECT status,usable,target_games FROM m3_pitcher_targets WHERE sample_id='2024:2024-04-08:absent' AND horizon='7d'").fetchone()),('missing',0,None))
+
+    def test_m2_excluded_and_no_pitch_rows_have_audit_index(self) -> None:
+        for key, day in [('a','2024-04-01'),('b','2024-04-02'),('c','2024-04-03')]:
+            self.game(key,day,1,0)
+        self.pa('a',changed=1)
+        self.pa('b',event=None,label='unlabeled_half_end_candidate')
+        self.pa('c',event='walk')
+        self.db.execute("UPDATE source.plate_appearances SET physical_pitch_rows=0 WHERE game_id='c'")
+        self.db.execute("DELETE FROM source.pitches WHERE game_id='c'")
+        build_events(self.db)
+        self.assertEqual([tuple(row) for row in self.db.execute("SELECT game_id,status,exclusion_reason,no_actual_pitch FROM m2_index ORDER BY game_id")],
+            [('a','excluded','participant_changed',0),('b','excluded','unlabeled_half_end_candidate',0),('c','eligible',None,1)])
+        self.assertEqual([tuple(row) for row in self.db.execute("SELECT sample_id,target_event FROM m2_targets")],[('c:1','walk')])
+
+    def test_missing_identity_observation_location_stops_build(self) -> None:
+        self.game('a','2024-04-01',1,0)
+        self.db.execute("INSERT INTO source.player_observations VALUES ('b',2024,2,'이름','missing',0)")
+        with self.assertRaisesRegex(ValueError,'관측 원본 행'):
+            build_events(self.db)
 
 
 if __name__ == '__main__':

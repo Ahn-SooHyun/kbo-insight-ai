@@ -2,6 +2,8 @@
 
 import sqlite3
 
+from .model_players import prepare_player_history
+
 
 # 날짜별 집계로 당일 경기 결과(더블헤더 포함)를 모두 제외한다.
 CONTEXT_SQL = """
@@ -47,28 +49,31 @@ JOIN team_prior h ON h.team=g.home_team_id AND h.season=g.season AND h.date=g.da
 JOIN team_prior a ON a.team=g.away_team_id AND a.season=g.season AND a.date=g.date;
 CREATE UNIQUE INDEX temp.game_context_key ON game_context(game_id);
 
+-- 현재 사건에서 확인한 참가자와 날짜만 질의 키로 사용한다.
+CREATE TEMP TABLE player_query_dates AS
+SELECT player_id,role,date FROM player_history_base
+UNION SELECT a.start_batter_id,'hitter',g.date FROM source.eligible_pa a JOIN game_context g USING(game_id)
+UNION SELECT a.start_pitcher_id,'pitcher',g.date FROM source.eligible_pa a JOIN game_context g USING(game_id)
+UNION SELECT p.batter_id,'hitter',g.date FROM source.eligible_pitches p JOIN game_context g USING(game_id)
+UNION SELECT p.pitcher_id,'pitcher',g.date FROM source.eligible_pitches p JOIN game_context g USING(game_id);
 CREATE TEMP TABLE player_prior AS
-WITH daily AS (
- SELECT p.player_id,p.role,g.date,
- SUM(a.admitted=1) n,SUM(a.admitted=0) rejected,
- SUM(CASE WHEN a.admitted=1 THEN COALESCE(p.observed_pa,p.observed_bf) END) opportunities,
- SUM(CASE WHEN a.admitted=1 THEN p.observed_hits END) hits,
- SUM(CASE WHEN a.admitted=1 THEN p.observed_ab END) ab,
- SUM(CASE WHEN a.admitted=1 THEN p.observed_strikeouts END) so
- FROM source.player_games p JOIN source.player_admission a USING(game_id,team_id,player_id,role)
- JOIN source.eligible_games g USING(game_id) WHERE g.competition='regular'
- GROUP BY p.player_id,p.role,g.date
+WITH history AS (
+ SELECT q.player_id,q.role,q.date,p.game_id,p.date prior_date,
+   COALESCE(p.observed_pa,p.observed_bf) opportunities,p.observed_hits hits,p.observed_ab ab,p.observed_strikeouts so,
+   (p.history_candidate=1 AND (p.conflict_date IS NULL OR p.conflict_date>=q.date)) admitted
+ FROM player_query_dates q LEFT JOIN player_history_base p
+   ON p.player_id=q.player_id AND p.role=q.role AND p.date<q.date
 )
 SELECT player_id,role,date,
- COALESCE(SUM(n) OVER history,0) prior_games,
- COALESCE(SUM(rejected) OVER history,0) prior_rejected,
- SUM(opportunities) OVER history prior_opportunities,SUM(hits) OVER history prior_hits,
- SUM(ab) OVER history prior_ab,SUM(so) OVER history prior_so,
- COALESCE(SUM(n) OVER recent,0) recent_games,SUM(opportunities) OVER recent recent_opportunities,
- SUM(hits) OVER recent recent_hits
-FROM daily
-WINDOW history AS (PARTITION BY player_id,role ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),
- recent AS (PARTITION BY player_id,role ORDER BY julianday(date) RANGE BETWEEN 28 PRECEDING AND 1 PRECEDING);
+ COUNT(DISTINCT CASE WHEN admitted THEN game_id END) prior_games,
+ SUM(CASE WHEN game_id IS NOT NULL AND NOT admitted THEN 1 ELSE 0 END) prior_rejected,
+ SUM(CASE WHEN admitted THEN opportunities END) prior_opportunities,
+ SUM(CASE WHEN admitted THEN hits END) prior_hits,SUM(CASE WHEN admitted THEN ab END) prior_ab,
+ SUM(CASE WHEN admitted THEN so END) prior_so,
+ COUNT(DISTINCT CASE WHEN admitted AND prior_date>=date(date,'-28 days') THEN game_id END) recent_games,
+ SUM(CASE WHEN admitted AND prior_date>=date(date,'-28 days') THEN opportunities END) recent_opportunities,
+ SUM(CASE WHEN admitted AND prior_date>=date(date,'-28 days') THEN hits END) recent_hits
+FROM history GROUP BY player_id,role,date;
 CREATE UNIQUE INDEX temp.player_prior_key ON player_prior(player_id,role,date);
 """
 
@@ -102,6 +107,7 @@ def _player_select() -> str:
 
 def build_events(db: sqlite3.Connection) -> None:
     """검증 후보를 입력·정답·인덱스로 분리하고 현재 사건의 사후 값을 차단한다."""
+    prepare_player_history(db)
     db.executescript(CONTEXT_SQL)
     game = _select("g", GAME_FEATURES)
     history = _player_select()
@@ -113,9 +119,22 @@ def build_events(db: sqlite3.Connection) -> None:
     CREATE TABLE m1_targets AS SELECT game_id sample_id,home_score target_home_runs,
        away_score target_away_runs,winner target_result FROM source.eligible_games ORDER BY game_id;
 
+    -- 탈락 타석도 원본 키와 독립적인 품질 플래그를 남긴다. 인덱스는 입력이 아니다.
     CREATE TABLE m2_index AS SELECT a.game_id||':'||a.pa_number sample_id,a.game_id,g.date sample_date,g.split,
-      'eligible' status,a.pa_number,a.source_sha,a.start_source_row,a.end_source_row
-      FROM source.eligible_pa a JOIN game_context g USING(game_id) ORDER BY a.game_id,a.pa_number;
+      CASE WHEN e.game_id IS NOT NULL THEN 'eligible' ELSE 'excluded' END status,
+      CASE WHEN e.game_id IS NOT NULL THEN NULL WHEN q.game_id IS NULL THEN 'missing_audit'
+        WHEN a.participant_changed<>0 THEN 'participant_changed'
+        WHEN q.start_complete<>1 THEN 'incomplete_start' WHEN q.order_complete<>1 THEN 'incomplete_order'
+        WHEN a.state_valid<>1 OR q.state_consistent<>1 OR q.runs_consistent<>1 THEN 'invalid_state'
+        WHEN q.label_kind<>'observed_result' THEN q.label_kind
+        WHEN a.result_valid<>1 THEN 'invalid_result' ELSE 'unresolved' END exclusion_reason,
+      a.pa_number,a.source_sha,a.start_source_row,a.end_source_row,a.start_batter_id,a.end_batter_id,
+      a.start_pitcher_id,a.end_pitcher_id,a.credited_batter_candidate,a.credited_pitcher_candidate,
+      a.participant_changed,a.physical_pitch_rows,(a.physical_pitch_rows=0) no_actual_pitch,
+      a.event,a.result_valid,a.state_valid,q.start_complete,q.order_complete,q.state_consistent,q.runs_consistent,q.label_kind
+      FROM source.plate_appearances a JOIN game_context g USING(game_id)
+      LEFT JOIN source.pa_audit q USING(game_id,pa_number) LEFT JOIN source.eligible_pa e USING(game_id,pa_number)
+      ORDER BY a.game_id,a.pa_number;
     CREATE TABLE m2_inputs AS SELECT a.game_id||':'||a.pa_number sample_id,{game},a.inning,a.half,
       a.start_batter_id batter_id,a.start_pitcher_id pitcher_id,a.pre_home_score home_score,
       a.pre_away_score away_score,a.pre_outs outs,(a.pre_on_1b IS NOT NULL) on_first,
@@ -213,9 +232,8 @@ def build_support(db: sqlite3.Connection) -> None:
       FROM starter_actual WHERE player_id IS NOT NULL ORDER BY date,game_id,side;
     CREATE TABLE pitching_actual_evidence AS SELECT p.*,g.date FROM source.direct_pitching_candidates p
       JOIN source.eligible_games g USING(game_id) ORDER BY p.game_id,p.side,p.source_sha,p.source_row;
-    CREATE TEMP TABLE pitcher_history AS SELECT p.player_id,g.date,p.observed_pitches
-      FROM source.eligible_player_games p JOIN source.eligible_games g USING(game_id)
-      WHERE p.role='pitcher' AND g.competition='regular';
+    CREATE TEMP TABLE pitcher_history AS SELECT player_id,date,observed_pitches,conflict_date
+      FROM player_history_base WHERE role='pitcher' AND history_candidate=1;
     CREATE INDEX temp.pitcher_history_key ON pitcher_history(player_id,date);
     CREATE TABLE starter_pre_game AS
     WITH teams AS (
@@ -225,10 +243,14 @@ def build_support(db: sqlite3.Connection) -> None:
     SELECT t.game_id,t.date,t.team_id,h.player_id,COUNT(*) starts_last_28d,
       MAX(h.date) previous_start_date,CAST(julianday(t.date)-julianday(MAX(h.date)) AS INTEGER) days_since_start
     FROM teams t JOIN starter_history h ON h.team_id=t.team_id AND h.date<t.date
-      AND h.date>=date(t.date,'-28 days') GROUP BY t.game_id,t.date,t.team_id,h.player_id
+      AND h.date>=date(t.date,'-28 days')
+    JOIN source.games past ON past.game_id=h.game_id
+    LEFT JOIN player_identity_conflicts f ON f.player_id=h.player_id AND f.season=past.season AND f.team_id=h.team_id
+    WHERE f.conflict_date IS NULL OR f.conflict_date>=t.date GROUP BY t.game_id,t.date,t.team_id,h.player_id
     )
     SELECT c.*,MAX(p.date) previous_appearance_date,CAST(julianday(c.date)-julianday(MAX(p.date)) AS INTEGER) days_since_appearance,
       SUM(CASE WHEN p.date>=date(c.date,'-7 days') THEN p.observed_pitches END) observed_pitches_last_7d
     FROM candidates c LEFT JOIN pitcher_history p ON p.player_id=c.player_id AND p.date<c.date
+      AND (p.conflict_date IS NULL OR p.conflict_date>=c.date)
     GROUP BY c.game_id,c.date,c.team_id,c.player_id ORDER BY c.game_id,c.team_id,c.player_id;
     """)
