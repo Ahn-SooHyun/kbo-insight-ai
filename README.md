@@ -6,8 +6,8 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 
 [저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [예측·평가 계약](docs/standards/project_contract.md)
 
-> **현재 제공 범위 · 2026년 11월 11일**  
-> 도움말·읽기 전용 환경 확인과 명시적인 이닝 원본 표본 수집 명령을 제공한다. 프로젝트 기반·예측 기준 구축에서 확인한 기존 동작과 이번 수집 구현의 검증은 구분한다. HF 고정 배포 파일 하나의 원본 확보·게시 해시 대조·필드/행 표본 재독을 확인했다. Naver relay는 Timeout으로 실패했으며 전체 기간 포함·사건 의미·품질 통과·학습·예측·시뮬레이션은 아직 확인하지 않았다. 개발 흐름의 [현재 확인 범위](docs/planning/development_workflow.md#status)는 그 문서에 인수된 증거만 나타낸다.
+> **현재 제공 범위 · 2026년 11월 25일**
+> 공개 원본 46개·논리 대상 44개를 확보하고 표준화 및 최종 품질 검증판을 인수했다. 모델별 입력·정답과 시간 분할 생성 명령을 제공한다. 실제 작업 환경에서 산출물과 동일 입력 재생성 근거를 확인해야 한다. 예측 모델 학습·튜닝·최종 Test 평가와 시뮬레이션은 후속 작업이다. 자료 이용은 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가 범위에 한정한다.
 
 | 목적                | 읽을 곳                                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -31,9 +31,9 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 | [M2 타석](docs/standards/project_contract.md#m2) | 해당 타석 결과별 확률                         | 타석 시작 전                       |
 | [M3 선수](docs/standards/project_contract.md#m3) | 출전량·Count·파생 비율·시즌 전망              | 월요일 기준 7일·28일·잔여 정규시즌 |
 | [M4 상황](docs/standards/project_contract.md#m4) | 승리 확률·기대득점·전후 변화·WPA·상황 중요도  | 타석 직전·종료 직후                |
-| [M5 투구](docs/standards/project_contract.md#m5) | 다음 실제 공의 구종·결과·위치                 | 해당 공 투구 전                    |
+| [M5 투구](docs/standards/project_contract.md#m5) | 다음 실제 공의 구종·결과 공동 확률            | 해당 공 투구 전                    |
 
-M1~M5는 기능군이며, **최종 주 예측기 7개 이내**가 검증 전 기본 목표다. 독립 모델의 실제 집계와 미검증 가정은 [모델 수 계약](docs/standards/project_contract.md#model-count)을 따른다.
+M1~M5는 기능군이며, **최종 주 예측기 6개**(M1·M2·M4·M5 각 1개, M3 타자·투수 각 1개)를 기본 구성으로 확정했다. M5 위치는 제외한다. 독립 모델의 실제 집계와 미검증 가정은 [모델 수 계약](docs/standards/project_contract.md#model-count)을 따른다.
 
 ### 시즌 전망과 보조 기능
 
@@ -69,6 +69,9 @@ kbo-insight-ai/
 │   ├── __init__.py
 │   ├── datasets/
 │   │   ├── __init__.py
+│   │   ├── model_data.py
+│   │   ├── model_events.py
+│   │   ├── model_players.py
 │   │   ├── published_sources.py
 │   │   └── standardize.py
 │   ├── evaluation
@@ -105,6 +108,7 @@ kbo-insight-ai/
 │   └── validation/
 │       ├── __init__.py
 │       ├── test_inspection.py
+│       ├── test_model_data.py
 │       ├── test_standard_data.py
 │       └── test_standard_quality.py
 └── docs/
@@ -472,9 +476,36 @@ $kboPython = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
 | Dent 포스트시즌·LOPES     | 시즌/단계/날짜/팀/실제 점수                                                                                                                               | 결과 확보 기간 한정, 2026 이전/최신 판본 구분                    |
 | Dialektike 일정 CSV       | G_ID, G_DT, G_TM, HOME_ID/AWAY_ID, SR_ID/SR_NM, CANCEL_SC_ID/NM                                                                                           | 일정과 취소·대회 원문 참조, 점수/승자 생성 금지                  |
 
-검증 보고서의 `row_accounting`은 선정 대상별 물리 행 포함 및 제외 수를, `handoff.coverage_by_season`은 기능별 분모와 후보 수를, `handoff.player_admission`·`handoff.aggregate_checks`는 제한과 비교 결과를 제공한다. `handoff.model_contract`는 후속 작업의 키와 출처·기간·정보 경계를 기록한다. M3 월요일 기준 7일/28일/잔여 정규시즌 관측 종료는 후속 작업에서 판정하며, 시즌 완료 근거가 없으면 잔여 정답을 확정하지 않는다. 공식 순위·동률·진출·시리즈 규칙은 시뮬레이션 전에 별도로 검증해야 한다.
+검증 보고서의 `row_accounting`은 선정 대상별 물리 행 포함 및 제외 수를, `handoff.coverage_by_season`은 기능별 분모와 후보 수를, `handoff.player_admission`·`handoff.aggregate_checks`는 제한과 비교 결과를 제공한다. `handoff.model_contract`는 후속 작업의 키와 출처·기간·정보 경계를 기록한다. M3 월요일 기준 7일/28일/잔여 정규시즌의 관측 종료는 모델 자료 생성 단계에서 판정하며, 시즌 완료 근거가 없으면 잔여 정답을 확정하지 않는다. 공식 순위·동률·진출·시리즈 규칙은 시뮬레이션 전에 별도로 검증해야 한다.
 
 검증 대상의 DB 및 중간 파일 해시가 일치하지 않거나, 원본 행이 설명 없이 소실되거나, 선수 관측 집계의 재계산이 일치하지 않으면 실패한다. 출처 간 근본적인 불일치는 원본을 임의로 덮어쓰지 않고 최종 후보에서 제한한다. 이전 판본과 동일한 코드/설정으로 검증해야 하며 원본 변환 코드가 변경되었다면 새 표준화 실행을 생성한다.
+
+### 모델별 입력·정답 및 시간 분할
+
+최종 표준 검증판과 부모 DB, 품질 JSON, 중간 명세 및 원본 파일의 해시를 연결한다. 원본·표준 DB를 수정하지 않고 설정된 `processed_dir/model_data/<실행 ID>/`에 신규 산출물을 작성한다. 기존 Python 표준 라이브러리를 사용하며 추가 의존성/GPU가 필요하지 않다.
+
+```powershell
+$run = '06ae4302ed7544d089fb0c5c8deb5719'
+$verification = 'd936d50a5320463b8dd1c1331569ff19'
+& .venv/Scripts/python.exe -B -m src.datasets.model_data --run-id $run --verification-id $verification --validation-start 2025-01-01 --test-start 2026-01-01 --observation-end 2026-11-26
+```
+
+데이터 생성기 1.1.0은 이름 식별 시점을 분리하고 정답 품질·제외 명세를 확장한다. 변경된 코드와 이전 생성기 판본을 동일 입력으로 비교하지 않는다. 같은 수정 판본에서 새 첫 실행을 생성한 뒤 `--compare-run <첫 모델 자료 실행 ID>`를 추가한다. `manifest.json`의 `status=completed`, `comparison.reproducible=true` 및 변경 테이블 없음이 같은 입력 재생성의 검사 결과다.
+
+| 산출물                         | 활용                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model_data.sqlite3`           | `m1`, `m2`, `m3_hitter`, `m3_pitcher`, `m4`, `m5`의 `_inputs`, `_targets`, `_index`; 선수 정답 창 경기·팀 목록, 팀·역할 품질 및 식별 최초 관측 근거; 시즌·선발 보조 원천 |
+| `feature_target_contract.json` | 모델별 입력/정답 의미와 이용 시점, 결측 처리 및 학습 필터                                                                                                                |
+| `train_eda.json`               | 학습 분할만의 분포·결측·클래스·비율 정답 범위                                                                                                                            |
+| `manifest.json`                | 실제 분할별 수량·기간·상태, 원본/부모 버전, 파일 및 논리 해시, 설정, 제한 및 비교                                                                                        |
+
+모델 자료의 학습 기간은 2025-01-01 전, Validation은 2025년, 최종 Test는 2026년이다. M1은 2001년부터, 타석·상태·투구·선수 기록은 2023년부터 확보되어 있다. 경기 당일 과거 집계는 동일 날짜 경기를 모두 제외한다. 예측 대상 경기 대진은 알려진 조건으로 취급하며 실제 당시 일정 스냅샷이 존재한다고 주장하지 않는다. M2·M4·M5는 사건 경계를 따른다. M2는 전체 표준 타석을 `m2_index`에 보존하며 참가자 변경·무실제 투구·경계/결과 상태·귀속 후보와 제외 사유를 별도 기록하고 유효 타석만 입력/정답으로 사용한다. M5의 현재 공 구종/결과/속도/좌표 및 타석 종료 값은 입력하지 않는다. M4의 타석 전후 상태는 같은 경기 묶음에 둔다.
+
+M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준으로 월요일 이전 기록을 집계한다. `player_identity_evidence`는 원본 행에서 이름의 최초 관측일을 추적한다. M2·M3·M5 및 선발 과거 이력에서 해당 날짜 엄격 이전에 확인된 이름 충돌만 입력의 식별 제한에 반영하며, 미래 충돌을 소급 적용하지 않는다. 경기별 품질 기본 조건은 보존하고 정답에는 최종 검증 admission을 적용한다. 과거 발표 판본의 완전 재현을 주장하지 않는다. 각 정답 창은 7일/28일/잔여 정규시즌으로 구분한다. 관측 종료·개인 격리·관측 누락·관련 팀 및 역할의 경기 상태, 집계 불일치, 식별 및 역할 행 위험을 판정하고 `usable=1`인 기간의 `target_*`만 학습 후보로 사용한다. `player_game_role_quality`는 완료 경기 양 팀의 두 역할 품질을, `m3_window_teams`는 정답 검증에 사용된 과거 및 미래 관측 팀을 기록한다. 미래 팀은 입력이 아니다. `observed_*`의 부분 집계는 정답으로 사용하지 않는다. `zero_observed`는 리그 해당 역할의 위험과 격리 기록이 없는 관측 범위의 0에 한정하며 공식 등록/출전 0을 의미하지 않는다. `valid_observed`도 관측된 팀 이외의 미확인 이동 및 공식 모집단 완전성을 보장하지 않는다. 비율은 유효 분모에서만 계산하며 NULL은 0이 아니다. 2023~2025년은 명시적 정규시즌 종료 근거가 없으므로 잔여 정답이 확정되지 않는다. 2026년 Test의 잔여 정답을 학습으로 바꾸지 않는다. 선수 성적은 관측 PBP 기반으로 자료 누락/팀 이동/공식 자책점의 한계가 있다.
+
+시즌 보조 자료는 정규시즌 및 포스트시즌 결과·시리즈·일정을 별도 보존하며 최종 순위·동률·진출 규칙과 과거 일정 공개 상태를 추가 확인해야 한다. 선발의 사후 관측 후보, 근거, 기준 날짜 이전 선발/등판 이력을 분리한다. 당시 발표 선수·현재 경기 실제 선발은 M1 입력이 아니다.
+
+최종 모델 학습·전처리 fit·보정·성능 평가 및 최종 Test 정답 탐색은 하지 않는다. 후속 학습에서 `sample_id`·인덱스·정답·감사 열을 입력 변수에 포함하지 않는다. 학습된 결측 대체/Encoder/Scaler는 학습 분할에서만 fit하고 Validation/Test에 그대로 적용한다.
 
 <a id="outputs"></a>
 
@@ -492,18 +523,18 @@ $kboPython = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
 
 ## 5. 문제별 확인 경로
 
-| 질문·상황                                     | 확인할 곳                                                                                                                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 패키지를 import할 수 없는가                   | `.venv`의 Python으로 설치했는지와 [실행 명령](#commands)의 로딩 위치 출력                                                                                                |
-| 기준 경로·설정 파일 오류가 나는가             | [설정 우선순위](#running), 기준 디렉터리의 존재, `kbo.toml`의 존재·읽기 권한                                                                                             |
-| 자료 위치가 예상과 다른가                     | 프로젝트 기준, `KBO_PROJECT_ROOT`, 상대·절대경로 해석                                                                                                                    |
-| Seed·로그·경로 설정 오류가 나는가             | 필수 항목·타입·허용 범위·파일 충돌·경로 겹침                                                                                                                             |
-| 기록이 없는데 0으로 채워도 되는가             | [M3 정답 상태](docs/standards/project_contract.md#m3-state)                                                                                                              |
-| 과거 라인업을 경기 전 입력으로 써도 되는가    | [공개 시점 근거](docs/standards/project_contract.md#d04)                                                                                                                 |
-| 좌표가 없거나 실제 구종으로 위치를 평가했는가 | [M5](docs/standards/project_contract.md#m5) · [좌표 평가](docs/standards/project_contract.md#metrics-location)                                                           |
-| Test 결과를 보고 모델을 바꾸고 싶은가         | [분할·선택 경계](docs/standards/project_contract.md#split)                                                                                                               |
-| 같은 설정인데 결과가 달라졌는가               | [자산·실행 추적](docs/standards/project_contract.md#reproducibility)                                                                                                     |
-| 새 기능·모델·미확정 항목이 필요한가           | [범위](docs/standards/project_contract.md#scope) · [모델 수](docs/standards/project_contract.md#model-count) · [확정 절차](docs/standards/project_contract.md#decisions) |
+| 질문·상황                                  | 확인할 곳                                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 패키지를 import할 수 없는가                | `.venv`의 Python으로 설치했는지와 [실행 명령](#commands)의 로딩 위치 출력                                                                                                |
+| 기준 경로·설정 파일 오류가 나는가          | [설정 우선순위](#running), 기준 디렉터리의 존재, `kbo.toml`의 존재·읽기 권한                                                                                             |
+| 자료 위치가 예상과 다른가                  | 프로젝트 기준, `KBO_PROJECT_ROOT`, 상대·절대경로 해석                                                                                                                    |
+| Seed·로그·경로 설정 오류가 나는가          | 필수 항목·타입·허용 범위·파일 충돌·경로 겹침                                                                                                                             |
+| 기록이 없는데 0으로 채워도 되는가          | [M3 정답 상태](docs/standards/project_contract.md#m3-state)                                                                                                              |
+| 과거 라인업을 경기 전 입력으로 써도 되는가 | [공개 시점 근거](docs/standards/project_contract.md#d04)                                                                                                                 |
+| 위치 예측을 현재 범위로 잘못 포함했는가    | [M5](docs/standards/project_contract.md#m5) · [좌표 평가](docs/standards/project_contract.md#metrics-location)                                                           |
+| Test 결과를 보고 모델을 바꾸고 싶은가      | [분할·선택 경계](docs/standards/project_contract.md#split)                                                                                                               |
+| 같은 설정인데 결과가 달라졌는가            | [자산·실행 추적](docs/standards/project_contract.md#reproducibility)                                                                                                     |
+| 새 기능·모델·미확정 항목이 필요한가        | [범위](docs/standards/project_contract.md#scope) · [모델 수](docs/standards/project_contract.md#model-count) · [확정 절차](docs/standards/project_contract.md#decisions) |
 
 정상 종료 코드는 0, 설정 오류와 잘못된 명령은 2, 수집 실패는 3, 저장 실패는 4다. `check` 성공은 설정 읽기·타입·범위·기본 경로 조건을 통과했다는 뜻이다. 자료 존재·쓰기 권한·수집 가능·학습 가능을 보장하지 않는다. 예상하지 못한 실행 오류를 설정 오류로 간주하거나 성공으로 처리하지 않는다.
 
@@ -624,7 +655,7 @@ try {
     }
 
     # 없는 기준은 오류로 종료해야 함. 실제 경로를 만들지 않음
-    $kboMissingRoot = Join-Path $kboProjectRoot '.ct1-missing-root-probe'
+    $kboMissingRoot = Join-Path $kboProjectRoot '.missing-root-probe'
     if (Test-Path -LiteralPath $kboMissingRoot) {
         throw '오류 확인용 경로가 이미 존재합니다. 상태를 먼저 확인하세요.'
     }
