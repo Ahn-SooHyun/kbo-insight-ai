@@ -45,7 +45,7 @@ from ..validation.standard_quality import (
 
 
 LOGGER = logging.getLogger(__name__)
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 Row = dict[str, object]
 
@@ -111,6 +111,31 @@ def require(condition: bool, message: str) -> None:
     """검증 기준을 충족하지 못하면 완료 처리하지 않는다."""
     if not condition:
         raise ValueError(message)
+
+
+def normalize_season(value: object) -> int:
+    """실제 배포본의 문자열 시즌과 정수 시즌을 엄격하게 정규화한다.
+
+    bool, 실수, 공백이 포함된 문자열 및 잘못된 연도는 허용하지 않는다.
+    """
+    if type(value) is int:
+        season = value
+    elif (
+        isinstance(value, str)
+        and len(value) == 4
+        and value.isascii()
+        and value.isdigit()
+    ):
+        season = int(value)
+    else:
+        raise ValueError("원본 시즌 형식 오류")
+
+    require(
+        1000 <= season <= 9999,
+        "원본 시즌 범위 오류",
+    )
+
+    return season
 
 
 def winner_id(
@@ -197,7 +222,7 @@ def inspect_series(
 
     effective_wins = dict(wins)
 
-    # 와일드카드의 원본 명시 어드밴티지를 경기 승수와 구분한다.
+    # 원본에 명시된 어드밴티지는 실제 경기 승수와 구분한다.
     for participant in participants:
         participant_id = required_integer(participant["id"])
         advantage = participant.get("advantageWins", 0)
@@ -215,8 +240,7 @@ def inspect_series(
         )
 
     require(
-        effective_wins[champion]
-        >= max(effective_wins.values()),
+        effective_wins[champion] >= max(effective_wins.values()),
         f"시리즈 승자와 승수 불일치: {stage}",
     )
 
@@ -233,7 +257,12 @@ def flatten_postseason(
     season: int,
 ) -> tuple[list[Row], list[Row]]:
     """실제로 존재하는 포스트시즌 배열만 펼치고 종료 근거를 구분한다."""
-    require(raw.get("season") == season, "원본 시즌 불일치")
+    raw_season = normalize_season(raw.get("season"))
+
+    require(
+        raw_season == season,
+        f"원본 시즌 불일치: 기대={season}, 실제={raw_season}",
+    )
 
     postseason = as_row(raw["postseason"])
     rows: list[Row] = []
@@ -247,7 +276,7 @@ def flatten_postseason(
         series = as_row(postseason[stage])
         games = series.get("games")
 
-        if games is not None:
+        if "games" in series:
             require(
                 isinstance(games, list),
                 f"시리즈 배열 형식 오류: {season}/{stage}",
@@ -260,10 +289,7 @@ def flatten_postseason(
             game = as_row(item)
 
             require(
-                not any(
-                    key.startswith("_")
-                    for key in game
-                ),
+                not any(key.startswith("_") for key in game),
                 "파생 근거 필드명과 원본 충돌",
             )
 
@@ -294,7 +320,6 @@ def flatten_postseason(
 
             if game.get("isFinal") is True:
                 basis = "explicit_is_final"
-
             elif (
                 "isFinal" not in game
                 and series.get("isComplete") is True
@@ -303,7 +328,6 @@ def flatten_postseason(
                 and "winnerId" in game
             ):
                 basis = "completed_series_score_winner"
-
             else:
                 basis = "not_final"
 
@@ -311,13 +335,21 @@ def flatten_postseason(
                 away_score = required_integer(game["awayScore"])
                 home_score = required_integer(game["homeScore"])
 
+                expected_winner = winner_id(
+                    away,
+                    home,
+                    away_score,
+                    home_score,
+                )
+
+                if expected_winner is not None:
+                    require(
+                        type(game.get("winnerId")) is int,
+                        "포스트시즌 승자 ID 형식 오류",
+                    )
+
                 require(
-                    game.get("winnerId") == winner_id(
-                        away,
-                        home,
-                        away_score,
-                        home_score,
-                    ),
+                    game.get("winnerId") == expected_winner,
                     "포스트시즌 점수와 승자 불일치",
                 )
 
@@ -375,6 +407,7 @@ def flatten_postseason(
 
     season_complete = postseason.get("isComplete")
 
+    # 일부 라운드의 결과가 없으면 전체 시즌 완료를 확정하지 않는다.
     if season_complete is True and not all_rounds_observed:
         season_complete = None
 
@@ -418,6 +451,13 @@ def materialize_supplement(
     require(
         len(rows) == EXPECTED_ROWS[season],
         "고정 판본의 포스트시즌 전체 행 수 불일치",
+    )
+
+    required = set(source.target.get("required_fields", []))
+
+    require(
+        all(required.issubset(row) for row in rows),
+        f"포스트시즌 필수 필드 누락: {source.target_id}",
     )
 
     output = directory / (
@@ -648,7 +688,7 @@ def apply_supplement(
             "정규시즌 완료 경기와 포스트시즌 경기 중복",
         )
 
-        # 원본의 isFinal 부재는 중간 자료에 유지한다.
+        # 원본과 중간 자료의 isFinal 부재는 그대로 보존한다.
         # 기존 경기 변환기에만 검증된 파생 종료 상태를 전달한다.
         transformed.append({
             **row,
@@ -717,7 +757,10 @@ def apply_supplement(
                 "missing_reference"
                 if not matches
                 else "stage_label_match"
-                if any(item["stage_label_matches"] for item in matches)
+                if any(
+                    item["stage_label_matches"]
+                    for item in matches
+                )
                 else "date_teams_match_stage_label_differs"
             ),
         })
@@ -921,6 +964,17 @@ def build_standard_supplement(
             for season in sorted(REGULAR_COMPLETION)
         ]
 
+    # 원본의 실제 형식과 시리즈 상태를 신규 실행 폴더 생성 전에 검사한다.
+    for source in new_sources:
+        raw = as_row(read_json(source.path))
+        season = required_integer(source.target["season"])
+        rows, _ = flatten_postseason(raw, season)
+
+        require(
+            len(rows) == EXPECTED_ROWS[season],
+            f"포스트시즌 원본 전체 경기 수 불일치: {season}",
+        )
+
     inputs = {
         "version": VERSION,
         "base_run": base_run,
@@ -970,7 +1024,7 @@ def build_standard_supplement(
 
     records = []
 
-    # 이전에 실제 원본과 대조한 중간 자료를 신규 실행에 복제한다.
+    # 기존 검증판과 연결된 중간 자료를 별도 신규 실행에 복제한다.
     for record in base_manifest["versions"]:
         original = base_interim / record["interim_file"]
         destination = interim / record["interim_file"]
@@ -992,6 +1046,11 @@ def build_standard_supplement(
     supplements = []
 
     for source in new_sources:
+        LOGGER.info(
+            "포스트시즌 중간 자료 검증: %s",
+            source.target_id,
+        )
+
         evidence, rows, series = materialize_supplement(
             source,
             interim,
@@ -1016,6 +1075,7 @@ def build_standard_supplement(
     write_json(manifest_path, manifest)
 
     parent_path = directory / "standard.sqlite3"
+
     verified_path = (
         directory / f"verified-{verification_id}.sqlite3"
     )
@@ -1145,6 +1205,7 @@ def build_standard_supplement(
                 )
 
                 coverage = coverage_report(store)
+
                 coverage["regular_completion"] = evidence
                 coverage["postseason_supplement"] = source_evidence
 
@@ -1277,6 +1338,12 @@ def build_standard_supplement(
             )
         )
 
+        require(
+            previous_quality["status"] == "completed"
+            and previous_report["status"] == "completed",
+            "비교할 이전 보완 실행이 완료되지 않았습니다.",
+        )
+
         parent_comparison = compare_summaries(
             previous_quality,
             quality,
@@ -1298,6 +1365,7 @@ def build_standard_supplement(
         )
 
         quality["comparison"] = parent_comparison
+
         report["comparison"] = {
             "same_input": True,
             "changed_tables": changed,
@@ -1449,6 +1517,18 @@ def compare_model_runs(
         == current["database_sha256"],
         "모델 자료 변경 또는 미완료",
     )
+
+    for field in (
+        "validation_start",
+        "test_start",
+        "observation_end",
+        "timezone",
+        "seed",
+    ):
+        require(
+            previous["config"][field] == current["config"][field],
+            f"기존 모델 자료와 분할 또는 실행 설정 불일치: {field}",
+        )
 
     allowed_changes = {
         "m1_index",
