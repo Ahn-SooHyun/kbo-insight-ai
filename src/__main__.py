@@ -1,4 +1,4 @@
-"""환경 확인과 명시적인 원본 수집·검사 명령을 제공한다."""
+"""환경 확인과 명시적인 원본 수집·표준화·검사 명령을 제공한다."""
 
 import argparse
 from collections.abc import Sequence
@@ -18,7 +18,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """정상 0, 설정 오류 2, 수집 실패 3, 저장 실패 4, 검사 실패 5."""
     parser = argparse.ArgumentParser(
         prog="kbo-insight",
-        description="KBO Insight AI의 환경 확인과 명시적 원본 수집",
+        description="KBO Insight AI의 환경 확인과 원본 수집·표준화",
     )
     parser.add_argument(
         "--project-root",
@@ -65,6 +65,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     report.add_argument("--run-id", required=True)
 
+    standardization = commands.add_parser(
+        "standardize",
+        help="저장된 불변 원본을 표준화하고 품질을 검사",
+    )
+    standardization.add_argument(
+        "--as-of-run",
+        help="지정 수집 실행까지의 판본을 채택",
+    )
+    standardization.add_argument(
+        "--compare-run",
+        help="이전 표준화 실행과 결과를 비교",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "collect-sample":
@@ -86,6 +99,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     logging.basicConfig(level=settings.log_level, format=LOG_FORMAT)
+
+    if args.command == "standardize":
+        from .datasets.published_sources import SourceError
+        from .datasets.standardize import standardize
+        from .validation.standard_data import StandardDataError
+
+        try:
+            result = standardize(
+                settings,
+                as_of_run=args.as_of_run,
+                compare_run=args.compare_run,
+            )
+
+        except (SourceError, StandardDataError, ImportError) as exc:
+            LOGGER.error("표준 데이터 검사 실패: %s", exc)
+            return 5
+
+        except OSError as exc:
+            LOGGER.error("표준 데이터 입출력 실패: %s", exc)
+            return 4
+
+        except KeyboardInterrupt:
+            LOGGER.warning("표준 데이터 구축 실행 중단")
+            return 3
+
+        print(json.dumps(
+            result,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ))
+
+        return 0
 
     if args.command == "inspect-sample":
         from .validation.raw_sample import InspectionError, inspect_sample

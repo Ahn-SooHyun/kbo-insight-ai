@@ -67,15 +67,32 @@ kbo-insight-ai/
 ├── README.md
 ├── src/
 │   ├── __init__.py
-│   ├── __main__.py
-│   ├── settings.py
+│   ├── datasets/
+│   │   ├── __init__.py
+│   │   ├── published_sources.py
+│   │   └── standardize.py
+│   ├── evaluation
+│   ├── explainability
 │   ├── ingestion/
 │   │   ├── __init__.py
 │   │   ├── pilot.py
 │   │   └── published.py
-│   └── validation/
-│       ├── __init__.py
-│       └── raw_sample.py
+│   ├── lineups
+│   ├── models/
+│   │   ├── game_outcome
+│   │   ├── game_state
+│   │   ├── next_pitch
+│   │   ├── plate_appearance
+│   │   └── player_forecast/
+│   │       ├── hitter
+│   │       └── pitcher
+│   ├── simulation
+│   ├── validation/
+│   │   ├── __init__.py
+│   │   ├── raw_sample.py
+│   │   └── standard_data.py
+│   ├── __main__.py
+│   └── settings.py
 ├── tests/
 │   ├── foundation/
 │   │   ├── __init__.py
@@ -86,7 +103,8 @@ kbo-insight-ai/
 │   │   └── test_published.py
 │   └── validation/
 │       ├── __init__.py
-│       └── test_inspection.py
+│       ├── test_inspection.py
+│       └── test_standard_data.py
 └── docs/
     ├── planning/
     │   └── development_workflow.md
@@ -94,25 +112,29 @@ kbo-insight-ai/
         └── project_contract.md
 ```
 
-| 위치                                  | 책임                                                    |
-| ------------------------------------- | ------------------------------------------------------- |
-| `.github/`                            | Issue·PR 양식                                           |
-| `.python-version`                     | 기본 Python 요청 버전                                   |
-| `pyproject.toml`                      | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
-| `kbo.toml`                            | 현재 사용하는 경로·Seed·로그 설정                       |
-| `.gitignore`                          | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
-| `src/__init__.py`                     | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
-| `src/__main__.py`                     | 도움말·설정 확인 명령과 CLI 로그                        |
-| `src/settings.py`                     | 설정 읽기·타입 및 범위 검증·경로 해석                   |
-| `src/ingestion/pilot.py`              | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
-| `src/ingestion/published.py`          | 승인 명세 기반 배포 파일 수집·원본 버전·실행 현황       |
-| `src/validation/raw_sample.py`        | 고정 원본의 파일 동일성·행 근거를 읽기 전용으로 검사    |
-| `tests/ingestion/test_collection.py`  | 합성 응답 기반 수집·실패·보존 검증                      |
-| `tests/ingestion/test_published.py`   | 합성 파일 전체 수집·갱신·재개 및 불변 저장 검증         |
-| `tests/foundation/test_foundation.py` | 설정·경로·오류·읽기 전용 동작 검증                      |
-| `tests/validation/test_inspection.py` | 합성 Parquet 기반 원본 검사·실패 동작 검증              |
-| `docs/planning/`                      | 개발 순서·선행 관계·증거·인수 기준                      |
-| `docs/standards/`                     | 예측·평가·저장·설정의 상세 계약                         |
+| 위치                                     | 책임                                                    |
+| ---------------------------------------- | ------------------------------------------------------- |
+| `.github/`                               | Issue·PR 양식                                           |
+| `.python-version`                        | 기본 Python 요청 버전                                   |
+| `pyproject.toml`                         | 패키지 정보·Python 지원 범위·빌드 도구·설치 진입점      |
+| `kbo.toml`                               | 현재 사용하는 경로·Seed·로그 설정                       |
+| `.gitignore`                             | 환경·비밀값 파일·대용량 산출물·캐시 추적 제외           |
+| `src/__init__.py`                        | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
+| `src/__main__.py`                        | 도움말·설정 확인 명령과 CLI 로그                        |
+| `src/settings.py`                        | 설정 읽기·타입 및 범위 검증·경로 해석                   |
+| `src/ingestion/pilot.py`                 | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
+| `src/ingestion/published.py`             | 승인 명세 기반 배포 파일 수집·원본 버전·실행 현황       |
+| `src/validation/raw_sample.py`           | 고정 원본의 파일 동일성·행 근거를 읽기 전용으로 검사    |
+| `src/datasets/published_sources.py`      | 수집 이력·원본 무결성·판본 선택과 중간 자료 생성        |
+| `src/datasets/standardize.py`            | 경기·타석·투구·선수 기록의 연결 및 표준화               |
+| `src/validation/standard_data.py`        | 표준 스키마·품질 검사·재생성 비교                       |
+| `tests/ingestion/test_collection.py`     | 합성 응답 기반 수집·실패·보존 검증                      |
+| `tests/ingestion/test_published.py`      | 합성 파일 전체 수집·갱신·재개 및 불변 저장 검증         |
+| `tests/foundation/test_foundation.py`    | 설정·경로·오류·읽기 전용 동작 검증                      |
+| `tests/validation/test_inspection.py`    | 합성 Parquet 기반 원본 검사·실패 동작 검증              |
+| `tests/validation/test_standard_data.py` | 원본 인수·표준 상태·판본 비교의 합성 자료 검사          |
+| `docs/planning/`                         | 개발 순서·선행 관계·증거·인수 기준                      |
+| `docs/standards/`                        | 예측·평가·저장·설정의 상세 계약                         |
 
 현재 구조는 소스·테스트·문서를 폴더로 분리하고, 패키지 내부에서는 명령 진입점과 설정 책임을 파일로 분리한다. 설정과 CLI는 패키지 루트에 두고 수집과 검사는 각각 `ingestion/`과 `validation/`에 둔다.
 
@@ -366,6 +388,44 @@ $kboPython = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
 ```
 
 종료 코드 0은 해당 실행에서 선정 파일의 확보 또는 근거 있는 정상 무자료까지 확인한 것이다. 경기 완전성·시즌 종료·학습 허용·실제 프로젝트 완료와 같지 않다. 2는 명세/인자/설정 오류, 3은 파일 확보 실패 또는 보류/미완료, 4는 저장·이력 접근 실패다. 기존 inspect-sample의 5도 유지한다. 수집 결과의 경기 ID 누락·추가·미확인 상태 및 시즌 완료 근거는 별도 인수한다.
+
+### 3.10 표준 데이터와 품질 검사
+
+수집한 불변 원본과 수집 이력만 읽어 표준 자료를 생성한다. 재수집·네트워크 통신 없이 기존 경로 설정 및 inspection 선택 의존성(pyarrow), 표준 라이브러리 sqlite3를 재사용한다. 원본 해시·파일 크기·판본을 검사한 후 중간 자료와 표준 자료를 별도의 실행 ID 아래에 저장한다.
+
+```powershell
+# 최신 판본 적용
+& .venv/Scripts/python.exe -B -m src standardize
+# 이전 수집 실행까지의 판본 적용 (전체 대상이 확보된 실행 ID 사용)
+& .venv/Scripts/python.exe -B -m src standardize --as-of-run ca57b43fc9604710ad5fd8bf8cf8aff6
+# 이전 표준화 실행 ID와 비교 (실제 ID로 변경)
+& .venv/Scripts/python.exe -B -m src standardize --compare-run <표준화_실행_ID>
+```
+
+중간 자료는 `data/interim/standard/{run_id}/`, 표준 SQLite DB(`standard.sqlite3`)와 검사 보고서(`quality.json`)는 `data/processed/standard/{run_id}/`에 생성한다. 설정에 경로가 다르게 지정된 경우 그 경로를 따른다. 중간 자료의 manifest에는 원본 SHA-256, 수집 결과와 대상 명세, 채택 판본, 코드·설정 해시와 중간 파일 해시를 기록한다. 이전 실행의 원본이나 결과를 덮어쓰지 않는다.
+
+| 표준 테이블         | 키 또는 논리 단위                    | 내용 및 이용 제한                                             |
+| ------------------- | ------------------------------------ | ------------------------------------------------------------- |
+| games               | game_id                              | 정규·포스트시즌 점수/상태; 연기 일정은 완료 경기와 구분       |
+| schedule_reference  | source_sha, source_row               | 월별 일정·취소·대회명 원문; 결과 및 승자를 추정하지 않음      |
+| plate_appearances   | game_id, pa_number                   | 타석 전후 상태, 결과 및 시작/종료 참가자, 공식 귀속 후보      |
+| pitches             | game_id, pa_number, pitch_number     | 양수 투구 번호의 관측 기록; 상태·순서·정답 후보를 별도 판정   |
+| non_pitch           | source_sha, source_row               | 투구 번호 0의 관측 사건; 실제 투구 수에서 제외                |
+| player_observations | player_id, season, team_id, name     | HF 내부 ID의 이름·팀 관측; 이름만으로 다른 ID를 병합하지 않음 |
+| player_games        | game_id, team_id, player_id, role    | 관측 집계와 완전성 후보; 공식 기록 검증과 구분                |
+| starters            | source_sha, source_row, side, method | 명시된 선발 및 PBP 최초 관측 선발 후보; 과거 공개 시점 미확인 |
+| pitching_records    | source_sha, source_row               | 직접 투수 등판 기록; ID 미관측·이닝→아웃 변환 검사            |
+| game_checks         | game_id                              | 경기 종료 점수 대조, 타석·투구 순서 및 경계 검사              |
+| comparisons         | source_sha, source_row, metric       | 원천 간 관측 집계 일치·불일치·비교 불가                       |
+| issues              | id                                   | 원인·영향·출처·행 위치와 격리·경고·제외 분류                  |
+
+`source_row`는 0부터 시작하는 원본 대응 행 번호다. Dent 포스트시즌은 네 시리즈를 펼친 순서로 기록한다. HF의 post\_\* 값은 타석 종료 상태이며 투구 직후 상태가 아니다. 과거 공개 시각의 근거 없이 실제 선발·최신 일정 등을 경기 전 입력으로 사용하지 않는다. Window의 시즌 최종 선발 통계는 중간 자료에만 보존한다. 원본 제공 자료의 이용 조건과 2026-11-25 상위 승인(비영리 대학 과제용 로컬 표준화·학습·내부 평가)을 분리하며 실제 데이터 재배포/외부 서비스는 제외한다.
+
+현재 확인한 전체 원본 46개(44개 논리 대상)를 이전 판본, 최신 판본 및 동일 입력으로 각각 처리했다. 최신판에서 정규시즌 완료 16,064경기, 연기 1,129행, 포스트시즌 실제 결과 147경기, 논리적 타석 그룹 226,819개, 실제 투구 882,451행, 무투구 386행이 생성되었다. HF 2,880경기의 최종 점수는 Dent와 일치하고 동일 입력의 12개 표준 테이블 해시는 일치했다. 사용자가 실행한 전체 테스트 72개는 통과했다. 다만 이러한 결과는 원천 필드의 의미 또는 공식 기록 귀속까지 모두 검증했다는 뜻이 아니다.
+
+검증 보고서에서 타석 결과 미확정, 상태 경계·투구 순서 불연속, 선수 공식 기록 귀속 및 집계 불일치, 선발/등판 누락을 확인할 수 있다. `coverage_candidate`, `result_valid`, `state_valid`, `order_valid`, `target_valid`는 서로 별개의 후보 판정이다. 원천 간 비교의 불일치가 있는 후보는 후속 보완 및 인수 검토 전 최종 정답으로 쓰지 않는다. 시즌별 완료·공식 경기 규칙 및 정보 공개 시점도 미확인 부분을 남긴다. 미관측을 실제 0으로 채우지 않으며 모델별 Feature/Target 확정·시간 분할·학습은 후속 작업으로 분리한다.
+
+표준화 명령의 정상 종료(0)는 처리가 완료됐음을 나타내며 모든 자료가 사용 가능하다는 의미는 아니다. 파일 입출력 실패(4), 검사 실패(5), 실행 중단(3)은 별개이며, 오류 시에도 원본과 이전 성공 실행은 보존한다.
 
 <a id="outputs"></a>
 
