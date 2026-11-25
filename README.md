@@ -71,7 +71,8 @@ kbo-insight-ai/
 │   ├── settings.py
 │   ├── ingestion/
 │   │   ├── __init__.py
-│   │   └── pilot.py
+│   │   ├── pilot.py
+│   │   └── published.py
 │   └── validation/
 │       ├── __init__.py
 │       └── raw_sample.py
@@ -81,7 +82,8 @@ kbo-insight-ai/
 │   │   └── test_foundation.py
 │   ├── ingestion/
 │   │   ├── __init__.py
-│   │   └── test_collection.py
+│   │   ├── test_collection.py
+│   │   └── test_published.py
 │   └── validation/
 │       ├── __init__.py
 │       └── test_inspection.py
@@ -103,8 +105,10 @@ kbo-insight-ai/
 | `src/__main__.py`                     | 도움말·설정 확인 명령과 CLI 로그                        |
 | `src/settings.py`                     | 설정 읽기·타입 및 범위 검증·경로 해석                   |
 | `src/ingestion/pilot.py`              | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
+| `src/ingestion/published.py`          | 승인 명세 기반 배포 파일 수집·원본 버전·실행 현황       |
 | `src/validation/raw_sample.py`        | 고정 원본의 파일 동일성·행 근거를 읽기 전용으로 검사    |
 | `tests/ingestion/test_collection.py`  | 합성 응답 기반 수집·실패·보존 검증                      |
+| `tests/ingestion/test_published.py`   | 합성 파일 전체 수집·갱신·재개 및 불변 저장 검증         |
 | `tests/foundation/test_foundation.py` | 설정·경로·오류·읽기 전용 동작 검증                      |
 | `tests/validation/test_inspection.py` | 합성 Parquet 기반 원본 검사·실패 동작 검증              |
 | `docs/planning/`                      | 개발 순서·선행 관계·증거·인수 기준                      |
@@ -222,7 +226,7 @@ Windows AMD64의 Python 3.12.15와 uv 0.13.7에서 편집 가능 설치, 설치�
 
 `models/`는 모델 소스 코드가 아닌 저장 자산의 위치다. 실행 소스는 `src/` 아래에 둔다.
 
-원본 보존·부모 자료·버전·실행 식별자와 이력의 의미는 [계약 10절](docs/standards/project_contract.md#reproducibility)을 따른다. 설정 확인은 경로 해석·검증만 수행한다. 명시적인 collect-sample 실행은 원본과 시도 이력을 생성한다. 전체 수집·변환·학습 이력 시스템은 아직 구현하지 않는다.
+원본 보존·부모 자료·버전·실행 식별자와 이력의 의미는 [계약 10절](docs/standards/project_contract.md#reproducibility)을 따른다. 설정 확인은 경로 해석·검증만 수행한다. 명시적인 수집 명령은 원본과 시도 이력을 생성한다. 공개 배포 파일 전체 수집은 3.9절을 참조하고, 표준화·변환·학습 이력 시스템은 후속 범위다.
 
 ### 3.5 로그·Secret·Git 추적
 
@@ -238,7 +242,7 @@ Windows AMD64의 Python 3.12.15와 uv 0.13.7에서 편집 가능 설치, 설치�
 
 ### 3.6 명시적인 원본 표본 수집
 
-`ingestion/pilot.py`는 `load_settings`가 반환한 원본 경로·원천 주소·요청 제한을 사용한다. `collect-sample` 분기에서만 네트워크·디렉터리 생성·파일 쓰기가 발생한다. import·도움말·기존 check는 수집하지 않는다. 바이트코드 쓰기를 막을 때는 Python의 `-B`를 사용한다.
+`ingestion/pilot.py`는 `load_settings`가 반환한 원본 경로·원천 주소·요청 제한을 사용한다. `pilot.py`는 `collect-sample`에서만 네트워크·디렉터리 생성·파일 쓰기를 발생시킨다. import·도움말·기존 check는 수집하지 않는다. 바이트코드 쓰기를 막을 때는 Python의 `-B`를 사용한다.
 
 대상은 공개 원본에서 확인한 경기 ID 하나와 이닝 하나다. ID 형식 검사는 실제 경기 존재 확인을 대신하지 않는다. 현재 진단 설정은 대기 제한 30초·재시도 0회로 한 번만 요청하고, 응답의 저장 크기는 1 MiB 이하로 제한한다. 이전 10초·재시도 1회 실행은 두 시도 모두 Timeout이었으며, 30초 단일 요청도 Timeout으로 실패했다. 제한 초과 확인을 위해 메모리에서 한 바이트를 더 읽을 수 있으나 초과 응답은 부분 실패로 기록한다. 자동 전송은 차단한다. timeout은 네트워크 대기 제한이며 전체 실행시간의 상한은 아니다.
 
@@ -265,7 +269,7 @@ HTTP 500/502/503/504와 시간 초과·일시 네트워크/불완전 응답만 �
 & "D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe" -B -m src --project-root "D:/Programming/kbo-insight-ai" collect-sample --game-id "20230401HHWO02023" --inning 1
 ```
 
-정상 구조/저장은 종료 0, 인자·설정 오류 2, 수집/응답 검사 실패 3, 원본·이력 저장 실패 4다. 종료 0도 #6 완료나 #7 착수 승인이 아니다. 실제 수집 전 출처 조건을 확인하고, 수집 후 원본/hash/이력과 의미 검증 근거를 인계한다. 캐시는 유일한 원본으로 사용하지 않는다.
+정상 구조/저장은 종료 0, 인자·설정 오류 2, 수집/응답 검사 실패 3, 원본·이력 저장 실패 4다. 종료 0도 출처 이용 범위나 실제 전체 수집의 승인이 아니다. 실제 수집 전 출처 조건을 확인하고, 수집 후 원본/hash/이력과 의미 검증 근거를 인계한다. 캐시는 유일한 원본으로 사용하지 않는다.
 
 계약의 D01·D04~D11은 실제 근거 확인 전 미확정이다. 전체 기간·학습 날짜·조건부 최종 판정·M4 산식은 이번 구현에서 결정하지 않는다. 기존 테스트는 합성 응답을 실제 표본으로 보고하지 않는다.
 
@@ -305,6 +309,63 @@ Naver의 두 실행은 각각 10초 두 시도, 30초 한 시도 모두 HTTP 상
 ```
 
 파일의 행 수/날짜/경기 ID 수는 읽은 파일의 관측값이며 공식 일정 대비 포함률·시즌 완료·전체 품질 통과가 아니다. 같은 타석 키에서 참가자 ID가 달라지는 사례는 변화 후보로 기록하며, 원문 교체 역할·공식 결과 귀속·미완료 타석의 주루 종류는 독립 원천으로 확인해야 한다. 게시 명세만으로 실제 행을 모두 최종 참가자라고 가정하지 않는다. 원본 좌표와 null을 수정하거나 0으로 채우지 않는다.
+
+### 3.9 공개 배포 파일 전체 수집 및 원본 버전 관리
+
+기존 표본 수집/검사는 그대로 유지한다. 실제 전체 수집은 출처별 저장 허용과 확정 명세를 받아 별도로 실행한다. 기존 표본·정정 후보와 비교 자료의 보류 상태를 자동으로 해제하지 않는다. Naver/KBO 원천 요청 및 원천 스크래퍼는 이번 전체 수집 대상이 아니다.
+
+`src/ingestion/published.py`는 GitHub 고정 commit의 raw 파일과 HF 고정 revision의 배포 파일을 지원한다. 기존 표본 통신·해시·시각 유틸리티를 재사용한다. 파일별 상한은 기존 `hf_collection_max_bytes` 이하이며 요청 간격, 제한된 재시도 및 Backoff를 명세로 관리한다. HTTP 403/429 발생 시 해당 출처의 남은 파일은 현재 실행에서 접근 제한 상태로 남긴다. 응답 전송·서명 주소와 오류 본문은 기록하지 않는다.
+
+#### 대상 명세
+
+JSON의 최상위 객체는 `{"schema_version": 1, "targets": [...]}`이다. 각 대상의 설정 필드는 아래와 같다. 현재 승인된 실제 전체 수집 명세는 제공하지 않는다. 합성 검증은 테스트에서 임시 명세를 만들고 통신을 대체한다.
+
+| 필드                                                  | 의미                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| target_id, source, repository, revision, filename     | 파일 식별자, github/hf, owner/repo, 40자 고정 commit/revision, 배포 상대 파일명                                    |
+| kind, season, competition, start_date, end_date       | 자료 종류, 시즌, regular/postseason, ISO 기간                                                                      |
+| publisher, upstream, evidence_url                     | 발행자, 상류, 출처/이용 근거 공개 HTTPS 링크                                                                       |
+| approval_ref, permitted_uses                          | 수집 승인 기록과 허용 용도. 승인 참조 및 download/store가 모두 없으면 수집 보류. process/train/publish는 별도 판정 |
+| required_fields, max_bytes, retries, interval_seconds | 최소 필드, 파일별 상한, 0~2회 추가 시도, 1~60초 요청 간격                                                          |
+| expected_bytes, expected_sha256                       | 배포자가 제공한 정확한 크기·SHA-256이 있을 때 대조, 그 외 null                                                     |
+| records_path                                          | JSON에서 레코드 배열까지의 키 목록, 기본 빈 목록                                                                   |
+| published_at, publication_evidence                    | 근거 있는 공개 시각(시간대 포함 ISO 형식)과 근거, 없으면 null                                                      |
+| season_complete, season_evidence                      | 시즌 종료 근거와 근거 참조, 미확인 null                                                                            |
+| empty_evidence                                        | 정상 무자료를 허용하는 근거, 없으면 빈 레코드 실패                                                                 |
+| game_id_field, expected_game_ids, coverage_evidence   | 원본 경기 ID 필드, 자동 산출한 기준 ID 목록과 근거. 없으면 경기 완전성 미평가                                      |
+| game_status_field, status_map                         | 원본 상태 필드와 확인된 값→scheduled/postponed/cancelled/suspended/completed/unknown 대응. 미확인 상태는 unknown   |
+
+`kind`는 schedule_results, play_by_play, player_game, starter_history, postseason, rules 중 하나다. CSV·JSON 레코드 배열·JSONL·Parquet의 최소 구조만 검사한다. Parquet에는 기존 inspection extra가 필요하다. 필드·상태 매핑은 실제 승인 표본에 근거해 확정한다. 예상 경기 ID 목록은 자동 확보 근거에서 생성하며 수동 경기 입력은 사용하지 않는다. 승인 참조와 공개 URL만 기록하고 Secret을 포함하지 않는다.
+
+#### 실행 및 원본 보존
+
+명세 파일을 확정한 뒤에만 collect-files 또는 update-files를 실행한다. 갱신은 새 고정 판본을 명세에 반영해 실행하고 원본을 덮어쓰지 않는다. 동일 내용은 SHA-256 주소의 원본 객체를 공유하되 새 실행 기록을 남긴다. 정정 후보는 이전 데이터와 내용이 다른 경우이며 공식 정정이란 단정이 아니다.
+
+| 위치                                                                | 책임                                                                  |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| raw_dir/published/objects/{sha256}.raw                              | 파싱 및 지정 해시·크기 검사 통과한 원본 bytes, 내용 주소 기반 불변    |
+| raw_dir/published/runs/{run_id}/manifest.json                       | 실행 시각, 사용한 대상 명세, 코드 해시와 요청 범위 및 재개 연결       |
+| raw_dir/published/runs/{run_id}/{target_id}.attempt-NN.started.json | 요청 직전 시도 기록                                                   |
+| raw_dir/published/runs/{run_id}/{target_id}.attempt-NN.json         | 시도별 결과, 실패와 부분 응답 크기 및 해시                            |
+| raw_dir/published/runs/{run_id}/{target_id}.result.json             | 파일 결과·원본 경로·판본·관측 시각 및 최소 검사/대조                  |
+| .part                                                               | 저장 중 임시 파일, 완료 기록이 아니며 중단 시 자동 삭제·채택하지 않음 |
+
+원본 파일·이력은 같은 파일시스템에서 임시 파일 생성, flush/fsync, 배타적인 하드링크 게시 및 재열람 해시 대조로 저장한다. 파일시스템에서 하드링크나 쓰기를 허용하지 않으면 저장 실패로 중단하므로 실제 저장 매체에서 검증해야 한다. 기본 raw 경로는 Git 제외 대상이다. 캐시는 원본 대체 저장소로 사용하지 않는다.
+
+`resume-files`는 이전 실행의 고정 명세를 재사용하고 성공 원본을 재검증한 뒤 미완료·실패 파일부터 다시 요청한다. 재개 시에도 실제 승인이 유효한지 확인한다. 부분 바이트 이어받기는 하지 않는다. 새 실행 ID와 이전 실행 연결을 보존한다. `report-files`는 수집망 접근 없이 해당 실행의 명세·결과로 읽기 전용 현황을 출력한다. 실행 중단 대상은 attempt 시작 기록의 존재에 따라 interrupted 또는 not_attempted로 표시한다.
+
+예시 명령 형식(아래 명세 경로와 실행 ID는 확정된 실제 값으로 대체한다):
+
+```powershell
+Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
+$kboPython = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
+& $kboPython -X utf8 -B -m src collect-files --manifest 'D:/approved/manifest.json'
+& $kboPython -X utf8 -B -m src update-files --manifest 'D:/approved/updated-manifest.json'
+& $kboPython -X utf8 -B -m src resume-files --run-id '<실행 ID>'
+& $kboPython -X utf8 -B -m src report-files --run-id '<실행 ID>'
+```
+
+종료 코드 0은 해당 실행에서 선정 파일의 확보 또는 근거 있는 정상 무자료까지 확인한 것이다. 경기 완전성·시즌 종료·학습 허용·실제 프로젝트 완료와 같지 않다. 2는 명세/인자/설정 오류, 3은 파일 확보 실패 또는 보류/미완료, 4는 저장·이력 접근 실패다. 기존 inspect-sample의 5도 유지한다. 수집 결과의 경기 ID 누락·추가·미확인 상태 및 시즌 완료 근거는 별도 인수한다.
 
 <a id="outputs"></a>
 
