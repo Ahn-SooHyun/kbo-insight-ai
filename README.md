@@ -110,6 +110,8 @@ kbo-insight-ai/
 │       ├── __init__.py
 │       ├── test_inspection.py
 │       ├── test_model_data.py
+│       ├── test_postseason_supplement.py
+│       ├── test_postseason_workflow.py
 │       ├── test_standard_data.py
 │       └── test_standard_quality.py
 └── docs/
@@ -510,7 +512,7 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 
 ### 포스트시즌 자료와 선수 장기 정답 보완
 
-기존 검증판을 입력으로 재사용하는 증분 표준화·검증 경로다. 이전 원본·중간 자료·표준판·모델 자료는 덮어쓰지 않는다. 추가 원본은 이미 정규시즌 원본에서 동일 SHA-256으로 확보한 네 물리 파일의 포스트시즌 영역이다. #15 수집 실행 `4bdbd03e20634ce58135ec2311555351`의 성공 결과를 포함하면 물리 원본은 46개(88,503,479 B), 논리 대상은 48개, 대상별 판본은 50개다. 정규시즌 원본과 포스트시즌의 동일 SHA는 보존하며 `competition`과 원본 영역별 대응 행 번호로 변환 행을 구분한다. 원래의 `standardize`/`validate-standard`는 종전 44개 대상의 전체 변환·검증 경로이며, 추가 수집 실행이 존재하는 현재 자료에서는 아래 증분 경로를 사용한다. 이전 완료 검증판을 기반으로 나머지 표준 테이블의 해시가 유지되는 조건을 검사한다.
+기존 검증판을 입력으로 재사용하는 증분 표준화·검증 경로다. 이전 원본·중간 자료·표준판·모델 자료는 덮어쓰지 않는다. 추가 원본은 이미 정규시즌 원본에서 동일 SHA-256으로 확보한 네 물리 파일의 포스트시즌 영역이다. #15 수집 실행 `4bdbd03e20634ce58135ec2311555351`의 성공 결과를 포함하면 물리 원본은 46개(88,503,479 B), 논리 대상은 48개, 대상별 판본은 50개다. 정규시즌 원본과 포스트시즌의 동일 SHA는 보존하며 `competition`과 원본 영역별 대응 행 번호로 변환 행을 구분한다. `standardize`는 선택한 수집 실행에 추가 포스트시즌 대상이 있는지 확인하여 기존 전체 표준화 또는 보완 표준화로 분기한다. 추가 대상이 포함된 경우 기존 완료 검증판을 기준으로 증분 처리하며, `--base-run`과 `--base-verification`으로 기준 판본을 명시할 수 있다. 생략할 경우 동일 원본 판본과 동일 논리 검증 해시를 가진 기존 완료 검증판에서 결정적인 순서로 기준을 선택하며, 기준 내용이 서로 다르면 명시적 선택을 요구한다. 과거 44개 대상 경로에서는 추가 대상 원본의 무결성을 확인하되 해당 논리 대상을 선택하지 않는다. 이전 완료 검증판을 기반으로 나머지 표준 테이블의 해시가 유지되는 조건을 검사한다.
 
 | 시즌 | 실제 원본 점수 후보 | 범위                                                |
 | ---- | ------------------: | --------------------------------------------------- |
@@ -535,6 +537,15 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 & .venv/Scripts/python.exe -B -X utf8 -m unittest discover -s tests -v
 & .venv/Scripts/python.exe -B -X utf8 -m src.datasets.postseason_supplement --collection-run 4bdbd03e20634ce58135ec2311555351 --base-run 06ae4302ed7544d089fb0c5c8deb5719 --base-verification d936d50a5320463b8dd1c1331569ff19 --base-model-run 3c1a2e7dc6724b5ba4f887d55bad17d5 --reproduce
 ```
+
+기존 CLI로 보완 표준화·검증만 별도로 실행할 수도 있다. `standardize`는 보완 대상에 대해 완료 표준판과 최종 검증판을 함께 생성한다. `validate-standard`는 보완판의 이미 생성된 검증 ID로 원본·중간 자료·DB·완료 근거를 읽기 전용 재검사한다. 새 검증 ID를 불필요하게 만들지 않는다. 기존 비보완 자료는 종전 표준화·검증 경로를 유지한다. 같은 입력의 새 보완판 비교에는 `standardize --compare-run <이전보완표준Run>` 또는 `validate-standard --compare-with <이전보완표준Run:검증ID>`를 사용한다.
+
+```powershell
+& .venv/Scripts/python.exe -B -X utf8 -m src standardize --as-of-run 4bdbd03e20634ce58135ec2311555351 --base-run 06ae4302ed7544d089fb0c5c8deb5719 --base-verification d936d50a5320463b8dd1c1331569ff19
+& .venv/Scripts/python.exe -B -X utf8 -m src validate-standard --run-id <새표준Run>
+```
+
+이전 모델과 보완 모델의 비교는 `starter_pre_game`의 기존 행을 보존하며, 신규 포스트시즌 경기의 실제 참가 팀과 기준일 이전 선발 기록에서만 추가 행을 허용한다. 행의 중복·삭제·변경 또는 미래 시점 혼입은 실패로 처리한다.
 
 실행 결과에 표시된 새 standard run/verification과 model run을 사용한다. `quality.json`, 최종 검증 JSON의 `handoff`, 모델 `manifest.json` 및 첫 모델 실행 폴더의 `supplement-impact.json`에서 이전/새 자료의 변경 테이블·표본 수·기간별 유효 Count·분모·관측 제한을 확인한다. 고정 시간 분할은 유지하며 최종 Test는 무결성/분할 검사만 수행한다. 2023~2025년 잔여 정답과 2025년 28일 정답은 실제 생성 결과에서만 확정한다. 기존 모델 예측기 수·학습 범위·시뮬레이션의 후속 작업은 변경하지 않는다.
 
