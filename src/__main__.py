@@ -78,6 +78,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="이전 표준화 실행과 결과를 비교",
     )
 
+    verification = commands.add_parser(
+        "validate-standard",
+        help="완료 표준 자료의 물리 행·집계·유효 후보 검증",
+    )
+    verification.add_argument(
+        "--run-id",
+        required=True,
+    )
+    verification.add_argument(
+        "--compare-with",
+        help="비교할 표준화 실행 ID:검증 ID",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "collect-sample":
@@ -89,16 +102,65 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.source == "hf" and (
             args.game_id is not None or args.inning is not None
         ):
-            parser.error("hf 파일 수집에는 경기 ID·이닝 인자를 사용하지 않습니다.")
+            parser.error(
+                "hf 파일 수집에는 경기 ID·이닝 인자를 사용하지 않습니다."
+            )
 
     try:
         settings = load_settings(args.project_root)
+
     except SettingsError as exc:
         logging.basicConfig(level="ERROR", format=LOG_FORMAT)
         LOGGER.error("설정 확인 실패: %s", exc)
         return 2
 
-    logging.basicConfig(level=settings.log_level, format=LOG_FORMAT)
+    logging.basicConfig(
+        level=settings.log_level,
+        format=LOG_FORMAT,
+    )
+
+    if args.command == "validate-standard":
+        import sqlite3
+
+        from .datasets.published_sources import SourceError
+        from .validation.standard_data import StandardDataError
+        from .validation.standard_quality import validate_standard
+
+        try:
+            result = validate_standard(
+                settings,
+                args.run_id,
+                compare_with=args.compare_with,
+            )
+
+        except (
+            SourceError,
+            StandardDataError,
+            ImportError,
+            sqlite3.DatabaseError,
+            KeyError,
+            ValueError,
+            TypeError,
+        ) as exc:
+            LOGGER.error("최종 표준 자료 검사 실패: %s", exc)
+            return 5
+
+        except OSError as exc:
+            LOGGER.error("최종 표준 자료 입출력 실패: %s", exc)
+            return 4
+
+        except KeyboardInterrupt:
+            LOGGER.warning("최종 표준 자료 검사 중단")
+            return 3
+
+        print(json.dumps(
+            result,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ))
+
+        return 0
 
     if args.command == "standardize":
         from .datasets.published_sources import SourceError
@@ -142,6 +204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.run_id,
                 args.game_id,
             )
+
         except InspectionError as exc:
             LOGGER.error("원본 검사 실패: %s", exc)
             return 5
@@ -152,6 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             indent=2,
             allow_nan=False,
         ))
+
         return 0
 
     if args.command == "collect-sample":
@@ -161,15 +225,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             if args.source == "hf":
                 run_dir, accepted = collect_hf_sample(settings)
+
             else:
                 run_dir, accepted = collect_sample(
                     settings,
                     args.game_id,
                     args.inning,
                 )
+
         except ValueError:
             LOGGER.error("수집 대상 오류: 공개 경기 ID와 이닝을 확인하세요.")
             return 2
+
         except OSError:
             LOGGER.error(
                 "원본 또는 이력 저장 실패: 권한·공간·파일 상태를 확인하세요."
@@ -212,24 +279,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             if args.command == "report-files":
                 result = report_files(settings, args.run_id)
+
             elif args.command == "resume-files":
                 result = collect_files(
                     settings,
                     mode="resume",
                     run_id=args.run_id,
                 )
+
             else:
                 result = collect_files(
                     settings,
                     manifest_path=args.manifest,
-                    mode="update" if args.command == "update-files" else "collect",
+                    mode=(
+                        "update"
+                        if args.command == "update-files"
+                        else "collect"
+                    ),
                 )
+
         except ManifestError as exc:
             LOGGER.error("전체 수집 명세 오류: %s", exc)
             return 2
+
         except OSError:
             LOGGER.error("원본 또는 수집 이력 접근·저장 실패")
             return 4
+
         except KeyboardInterrupt:
             LOGGER.warning("수집 중단: 기존 실행 ID로 재개할 수 있습니다.")
             return 3
