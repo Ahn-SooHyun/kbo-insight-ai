@@ -10,8 +10,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-import kbo_insight_ai
-from kbo_insight_ai.settings import SettingsError, load_settings
+import src
+from src.settings import SettingsError, load_settings
 
 
 BASE_CONFIG: dict[str, object] = {
@@ -64,13 +64,13 @@ def guard(event: str, args: tuple[object, ...]) -> None:
 sys.addaudithook(guard)
 arguments = sys.argv[1:]
 if arguments == ["__import__"]:
-    import kbo_insight_ai
-    import kbo_insight_ai.collection
-    import kbo_insight_ai.inspection
-    print(kbo_insight_ai.__file__)
+    import src
+    import src.ingestion.pilot
+    import src.validation.raw_sample
+    print(src.__file__)
 else:
     sys.argv = ["kbo-insight", *arguments]
-    runpy.run_module("kbo_insight_ai", run_name="__main__")
+    runpy.run_module("src", run_name="__main__")
 '''
 
 
@@ -146,7 +146,7 @@ class FoundationTests(unittest.TestCase):
 
         self.assertEqual(settings.raw_dir, self.root / "data" / "raw")
         self.assertFalse(settings.raw_dir.exists())
-        expected = Path(kbo_insight_ai.__file__).resolve().parents[2]
+        expected = Path(src.__file__).resolve().parents[1]
         self.assertEqual(default_settings.project_root, expected)
 
     def test_root_priority_and_absolute_paths(self) -> None:

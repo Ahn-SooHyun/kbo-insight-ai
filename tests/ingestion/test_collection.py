@@ -14,13 +14,13 @@ import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
-from kbo_insight_ai import collection
-from kbo_insight_ai.__main__ import main
-from kbo_insight_ai.settings import load_settings
+from src.ingestion import pilot as collection
+from src.__main__ import main
+from src.settings import load_settings
 
 
 GAME_ID = "20230401HHWO02023"
-SOURCE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC_BODY = json.dumps(
     {
         "result": {
@@ -84,8 +84,12 @@ class CollectionTests(unittest.TestCase):
         self.assertIsNone(record["source_published_at"])
         request = json.loads((first / "request.json").read_text(encoding="utf-8"))
         self.assertEqual(request["run_id"], record["run_id"])
+        self.assertEqual(
+            set(request["code_sha256"]),
+            {"ingestion/pilot.py", "settings.py", "__main__.py"},
+        )
         for name, digest in request["code_sha256"].items():
-            source = SOURCE_ROOT / "src" / "kbo_insight_ai" / name
+            source = SOURCE_ROOT / "src" / name
             self.assertEqual(digest, collection.sha256(source.read_bytes()))
 
     def test_rejects_bad_responses_without_retry(self) -> None:
@@ -259,7 +263,7 @@ class CollectionTests(unittest.TestCase):
     def test_cli_failure_and_storage_exit_codes(self) -> None:
         """명령이 통신 실패와 저장 실패를 서로 다른 비정상 코드로 반환한다."""
         with (
-            patch("kbo_insight_ai.__main__.load_settings", return_value=self.settings),
+            patch("src.__main__.load_settings", return_value=self.settings),
             patch.object(collection, "collect_sample") as collect,
             redirect_stdout(StringIO()),
             redirect_stderr(StringIO()),
@@ -393,7 +397,7 @@ class CollectionTests(unittest.TestCase):
     def test_hf_cli_and_invalid_cross_source_arguments(self) -> None:
         """출처 선택은 올바른 수집 함수를 호출하며 잘못된 인자는 쓰기 전에 거절한다."""
         with (
-            patch("kbo_insight_ai.__main__.load_settings", return_value=self.settings),
+            patch("src.__main__.load_settings", return_value=self.settings),
             patch.object(collection, "collect_hf_sample", return_value=(self.root, True)) as fetch,
             redirect_stdout(StringIO()) as output,
             redirect_stderr(StringIO()),
