@@ -82,33 +82,50 @@ M1은 정규시즌 경기 시작 전에 해당 날짜보다 이른 같은 시즌
 
 단일 Validation에서 평균 무승부 확률은 2.07%, 관측 비율은 3.06%(22경기)였다. 백테스트 2,160경기에서 구간별 득점 모형은 `venue_only` 대비 CRPS 0.01242, Log loss 0.00538, Brier 0.00495를 줄였다. 포아송 회귀는 구간별 득점 모형 대비 MAE가 0.00077 낮았고, CRPS·Log loss·Brier는 각각 0.06924·0.00459·0.00428 높았다. 구간별 득점 모형을 주 예측기로 사용한다.
 
-파일 배치를 반영한 검증 환경에서 관련 테스트 11개가 통과했다. 검증 표본 `20250322HHKT0`의 예측 JSON은 새 프로세스에서 자산을 불러 다시 계산한 결과와 모든 필드가 일치했다. 학습 실행 ID는 `c95f5da0c0e94cfc8cc0a6ebd3d6ed2e`, 포아송 후보를 포함한 백테스트 실행 ID는 `b3f7eb8a975e479bbae72917eb9237e0`이다.
+사용자 환경에서 전체 테스트 143개가 통과했다. 학습 실행 `0d9433b8044e48e5a4d21bbdb9b432e5`의 검증 표본 `20250322HHKT0`에서 저장 예측과 새 프로세스의 예측 JSON이 모든 필드에서 일치했다. 기본 백테스트 `0967e458dd924e57b6286eaa8e515f4c`와 포아송 후보 포함 백테스트 `9868f52b72744bb0b528507c0fcc78e2`는 각각 2023~2025년 정규시즌 2,160경기에서 완료했다. 두 실행에서 구간별 득점 모형과 홈·원정 기준의 비교 결과는 일치했다.
+
+## 수업의 검증 원리와 M1 적용
+
+| 수업에서 다룬 내용         | M1의 적용                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 교차검증과 최종 Test 분리  | 학습과 평가를 나누고 여러 구간에서 일반화를 확인하는 원리를 적용했다. 2023·2024·2025년을 차례로 검증하고, 매번 검증 시즌 이전까지 학습 범위를 확장한다. 2026년 최종 Test는 보류한다.  |
+| 기준 모델과 동일 표본 비교 | 단일 Validation 720경기에서 학습 시점의 단순 득점·승무패 기준과 공용 득점 예측기를 비교한다. 시즌별 백테스트의 각 후보도 같은 경기에서 비교한다.                                      |
+| 예측 문제에 맞는 평가 지표 | 득점 점예측에는 MAE·RMSE, 득점 분포에는 이산 CRPS, 승무패 확률에는 Log loss·Brier와 범주별 보정 표를 쓴다. 분류의 정확도나 혼동행렬은 필요할 때 보조 진단으로 검토한다.               |
+| 회귀와 손실 최소화         | L2 정규화 포아송 회귀로 비음수 정수 득점 분포를 추정해 선택 비교했다. 선형 예측값의 지수 변환과 포아송 우도를 쓰는 프로젝트 확장 실험이다. 주 예측기는 구간별 득점 모형으로 유지한다. |
+
+시간 순서가 있는 KBO 자료에서 무작위 K-fold, Stratified K-fold 및 랜덤 포레스트의 OOB 점수는 외부 백테스트 기준으로 채택하지 않았다. 승무패 확률은 홈·원정 득점의 결합 분포에서 산출한다. 하드·소프트 보팅, 배깅, 부스팅, 스태킹은 M1에서 실험하거나 채택한 방법에 포함되지 않는다. 다른 핵심 모델의 비교 후보와 적용 기준은 [개발 흐름의 강의 방법 적용 기준](../planning/development_workflow.md#lecture-methods)을 따른다.
 
 ## 검증과 실행 명령
 
-아래 순서로 전체 테스트, 실데이터 학습·평가, 새 프로세스의 저장 자산 재현, 포아송 후보를 포함한 시즌별 백테스트를 진행한다. 기본 백테스트는 마지막 명령에서 `--include-poisson`을 생략해 실행한다.
+아래 PowerShell 블록 전체를 붙여 넣는다. 전체 테스트와 실데이터 학습·평가를 실행하고, 새 프로세스에서 계산한 예측을 저장 JSON과 비교한다. 이후 기본 백테스트와 포아송 후보 포함 백테스트를 순서대로 실행한다. 어느 단계에서든 오류가 발생하면 블록이 중단된다.
 
 ```powershell
-Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
-$m1Python = 'D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe'
-$m1DataRun = '259b38decaac4ed68dd5a596cfbe4849'
+& {
+    Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai' -ErrorAction Stop
+    $m1Python = 'D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe'
+    $m1DataRun = '259b38decaac4ed68dd5a596cfbe4849'
 
-& $m1Python -X utf8 -B -m unittest discover -s tests
-if ($LASTEXITCODE -ne 0) { throw '전체 테스트 실패' }
+    & $m1Python -X utf8 -B -m unittest discover -s tests
+    if ($LASTEXITCODE -ne 0) { throw '전체 테스트 실패' }
 
-$m1Train = & $m1Python -X utf8 -B -m src.models.game_outcome train --run-id $m1DataRun
-if ($LASTEXITCODE -ne 0) { throw 'M1 학습·평가 실패' }
-$m1Report = ($m1Train -join [Environment]::NewLine) | ConvertFrom-Json
+    $m1Train = & $m1Python -X utf8 -B -m src.models.game_outcome train --run-id $m1DataRun
+    if ($LASTEXITCODE -ne 0) { throw 'M1 학습·평가 실패' }
+    $m1Report = ($m1Train -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+    $m1Train
 
-$m1Prediction = & $m1Python -X utf8 -B -m src.models.game_outcome predict --asset $m1Report.paths.model --input $m1Report.paths.input
-if ($LASTEXITCODE -ne 0) { throw 'M1 저장 자산 예측 실패' }
-$m1Prediction | & $m1Python -X utf8 -B -c 'import json, sys; from pathlib import Path; expected = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); sys.exit(0 if json.load(sys.stdin) == expected else 1)' $m1Report.paths.prediction
-if ($LASTEXITCODE -ne 0) { throw 'M1 저장 전후 예측 불일치' }
-Write-Output 'M1 저장 자산 예측 재현 성공'
-$m1Train
+    $m1Prediction = & $m1Python -X utf8 -B -m src.models.game_outcome predict --asset $m1Report.paths.model --input $m1Report.paths.input
+    if ($LASTEXITCODE -ne 0) { throw 'M1 저장 모델 예측 실패' }
 
-& $m1Python -X utf8 -B -m src.models.game_outcome.backtest --run-id $m1DataRun --include-poisson
-if ($LASTEXITCODE -ne 0) { throw 'M1 시즌별 백테스트 실패' }
+    $m1Prediction | & $m1Python -X utf8 -B -c 'import json, sys; from pathlib import Path; expected = json.loads(Path(sys.argv[1]).read_bytes()); sys.exit(0 if json.load(sys.stdin) == expected else 1)' $m1Report.paths.prediction
+    if ($LASTEXITCODE -ne 0) { throw 'M1 저장 예측과 재실행 예측 불일치' }
+    Write-Output 'M1 저장 모델 예측 재현 성공'
+
+    & $m1Python -X utf8 -B -m src.models.game_outcome.backtest --run-id $m1DataRun
+    if ($LASTEXITCODE -ne 0) { throw 'M1 기본 백테스트 실패' }
+
+    & $m1Python -X utf8 -B -m src.models.game_outcome.backtest --run-id $m1DataRun --include-poisson
+    if ($LASTEXITCODE -ne 0) { throw 'M1 포아송 후보 포함 백테스트 실패' }
+}
 ```
 
 [프로젝트 예측 계약](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/f05fb302ea8916c2b9748e53496ce75d03a51e05/docs/standards/project_contract.md#m1)
