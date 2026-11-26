@@ -12,8 +12,8 @@ import sys
 from typing import TypedDict
 from uuid import uuid4
 
-from . import model as m1
-from . import poisson
+from ....docs.models.game_outcome import model as m1
+from ....docs.models.game_outcome import poisson
 from .__main__ import BOUNDARIES, read_games, source
 from ...datasets.published_sources import SourceError, sha256_file, write_json
 from ...evaluation import game_outcome as evaluation

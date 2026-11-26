@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from math import exp, fsum, log
 
-from . import model as m1
+from ....docs.models.game_outcome import model as m1
 
 
 RIDGE = 0.01

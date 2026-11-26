@@ -1,16 +1,20 @@
 # 경기 결과·득점 예측 실행과 결과 계약
 
-KBO Insight AI · [이슈 #17 경기 결과·득점 예측](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/17)  
+KBO Insight AI · [이슈 #17 경기 결과·득점 예측](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/17)
+
 저장소 반영 위치 `docs/standards/game_outcome_score.md`
 
 ## 소스와 산출물 위치
 
-| 위치                                  | 책임                                                |
-| ------------------------------------- | --------------------------------------------------- |
-| `src/models/game_outcome/model.py`    | 입력 검증, 공용 득점 예측기 학습, 결합 분포 및 예측 |
-| `src/models/game_outcome/__main__.py` | 정규시즌 표본 연결, 학습·평가 명령, 자산 저장·로딩  |
-| `src/evaluation/game_outcome.py`      | Validation 기준 모델 비교, 지표와 확률 보정         |
-| `tests/models/test_game_outcome.py`   | 시간·입력·예측·저장 계약의 합성 검사                |
+| 위치                                         | 책임                                                |
+| -------------------------------------------- | --------------------------------------------------- |
+| `src/models/game_outcome/model.py`           | 입력 검증, 공용 득점 예측기 학습, 결합 분포 및 예측 |
+| `src/models/game_outcome/__main__.py`        | 정규시즌 표본 연결, 학습·평가 명령, 자산 저장·로딩  |
+| `src/models/game_outcome/backtest.py`        | 시즌별 학습 창, 공통 표본 비교, 평가 결과 저장      |
+| `src/models/game_outcome/poisson.py`         | 비교용 포아송 회귀와 득점 분포                      |
+| `tests/models/test_game_outcome_backtest.py` | 시간 순서, 비교 표본, 포아송 후보 검사              |
+| `src/evaluation/game_outcome.py`             | Validation 기준 모델 비교, 지표와 확률 보정         |
+| `tests/models/test_game_outcome.py`          | 시간·입력·예측·저장 계약의 합성 검사                |
 
 학습 자산과 평가 결과는 프로젝트 설정의 `models_dir`, `results_dir`에 저장한다. 기본값은 저장소 루트의 `models/`와 `results/`다.
 
@@ -33,7 +37,7 @@ M1은 정규시즌 경기 시작 전에 해당 날짜보다 이른 같은 시즌
 | ---------- | ---------------------------------- | --------------------------: | --------------------------------: |
 | Train      | 2025-01-01 이전                    |                      14,624 |                               163 |
 | Validation | 2025-01-01 이상 및 2026-01-01 미만 |                         720 |                                16 |
-| 최종 Test  | 2026-01-01 이상 및 2026-11-26 미만 |                   후속 검증 |                         후속 검증 |
+| 최종 Test  | 2026-01-01 이상 및 2026-11-26 미만 |                         720 |                                14 |
 
 개발 실행은 완료 매니페스트와 정규화한 입력 계약 해시를 확인하고 세 M1 테이블을 경기별로 연결한다. 실제 실행은 포함 기간과 분할별 제외를 평가 보고서에 기록한다. 상위 표준화에서 제외된 원본 사례는 해당 인수 자료의 품질 보고서에서 확인한다. DB 해시는 인수 매니페스트에 기재된 값을 보존한다.
 
@@ -58,16 +62,53 @@ M1은 정규시즌 경기 시작 전에 해당 날짜보다 이른 같은 시즌
 
 실행은 Python 3.12의 표준 라이브러리만 쓴다. 기존 저장 경로 설정으로 모델과 결과를 별도 생성한다. 기본 위치는 `models/m1/<실행 ID>/model.json` 및 `results/m1/<실행 ID>/` 아래의 `evaluation.json`, `example_input.json`, `example_prediction.json`이다. 예측 계약 버전은 `m1-final-score-v1`이다. 모델에는 입력 열 순서, 학습 방법, 출처와 버전, 모듈 해시, 런타임, 설정 시드, 분할별 표본, 재현 인자가 기록된다. 학습 계산은 결정적이며 실행 ID는 저장 폴더 충돌을 방지한다. 저장 자산은 읽어 다시 예측해 확인한 뒤 게시한다. JSON 또는 스키마·무결성 오류는 종료 코드 2로 보고한다. 완료된 예제 입력·출력에는 해당 경기의 정답이 들어가지 않는다.
 
+## 시즌별 백테스트
+
+2023·2024·2025 정규시즌을 각각 검증 시즌으로 두고 매번 그 시즌보다 이른 경기만 학습에 쓴다. 검증 경기는 시즌별 720경기다. 기본 실행은 홈·원정별 경험 분포에 동점 보정을 적용한 `venue_only`와 주 예측 방식인 `profile_histogram`을 비교한다. 이 백테스트의 기준과 단일 Validation의 득점·결과 빈도 기준은 산식이 다르다.
+
+`--include-poisson`을 지정하면 홈 여부와 기존 시즌·최근 득실점 변수를 쓰는 L2 정규화 포아송 회귀를 비교에 추가한다. 학습·동점 보정은 각 검증 시즌 이전의 경기만 사용한다. 포아송 분포는 지지 범위 밖 질량과 기대득점 오차의 상한을 기록한다. 백테스트는 후보별 지표와 학습·검증 구간을 `results/m1_backtest/<실행 ID>/evaluation.json`에 저장한다. 모델 자산은 `train` 명령에서 생성한다.
+
+## 보완안 검증 결과
+
+인수 데이터의 DB SHA-256이 매니페스트와 일치했다. 학습에는 정규시즌 14,624경기(2001-04-05~2024-10-01), 단일 Validation에는 720경기(2025-03-22~2025-10-04)를 사용했다. 같은 분할에서 포스트시즌은 각각 163경기와 16경기를 제외했다. 2026년 최종 Test는 후속 종합 검증에 인계한다.
+
+| 2025년 Validation 지표 |    기준 | 주 예측기 |
+| ---------------------- | ------: | --------: |
+| 통합 득점 MAE          | 2.67377 |   2.63660 |
+| 통합 득점 RMSE         | 3.38287 |   3.34147 |
+| 통합 이산 CRPS         | 1.84664 |   1.82266 |
+| 승무패 Log loss        | 0.81083 |   0.80047 |
+| 승무패 Brier           | 0.52919 |   0.51969 |
+
+단일 Validation에서 평균 무승부 확률은 2.07%, 관측 비율은 3.06%(22경기)였다. 백테스트 2,160경기에서 구간별 득점 모형은 `venue_only` 대비 CRPS 0.01242, Log loss 0.00538, Brier 0.00495를 줄였다. 포아송 회귀는 구간별 득점 모형 대비 MAE가 0.00077 낮았고, CRPS·Log loss·Brier는 각각 0.06924·0.00459·0.00428 높았다. 구간별 득점 모형을 주 예측기로 사용한다.
+
+파일 배치를 반영한 검증 환경에서 관련 테스트 11개가 통과했다. 검증 표본 `20250322HHKT0`의 예측 JSON은 새 프로세스에서 자산을 불러 다시 계산한 결과와 모든 필드가 일치했다. 학습 실행 ID는 `c95f5da0c0e94cfc8cc0a6ebd3d6ed2e`, 포아송 후보를 포함한 백테스트 실행 ID는 `b3f7eb8a975e479bbae72917eb9237e0`이다.
+
+## 검증과 실행 명령
+
+아래 순서로 전체 테스트, 실데이터 학습·평가, 새 프로세스의 저장 자산 재현, 포아송 후보를 포함한 시즌별 백테스트를 진행한다. 기본 백테스트는 마지막 명령에서 `--include-poisson`을 생략해 실행한다.
+
 ```powershell
 Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
-$kboPython = 'D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe'
-& $kboPython -X utf8 -B -m src.models.game_outcome train --run-id 259b38decaac4ed68dd5a596cfbe4849
-```
+$m1Python = 'D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe'
+$m1DataRun = '259b38decaac4ed68dd5a596cfbe4849'
 
-새 프로세스에서 예측을 실행할 때 Train 출력의 `paths.model`과 `paths.input`을 사용한다.
+& $m1Python -X utf8 -B -m unittest discover -s tests
+if ($LASTEXITCODE -ne 0) { throw '전체 테스트 실패' }
 
-```text
-python -X utf8 -B -m src.models.game_outcome predict --asset MODEL_JSON --input INPUT_JSON
+$m1Train = & $m1Python -X utf8 -B -m src.models.game_outcome train --run-id $m1DataRun
+if ($LASTEXITCODE -ne 0) { throw 'M1 학습·평가 실패' }
+$m1Report = ($m1Train -join [Environment]::NewLine) | ConvertFrom-Json
+
+$m1Prediction = & $m1Python -X utf8 -B -m src.models.game_outcome predict --asset $m1Report.paths.model --input $m1Report.paths.input
+if ($LASTEXITCODE -ne 0) { throw 'M1 저장 자산 예측 실패' }
+$m1Prediction | & $m1Python -X utf8 -B -c 'import json, sys; from pathlib import Path; expected = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); sys.exit(0 if json.load(sys.stdin) == expected else 1)' $m1Report.paths.prediction
+if ($LASTEXITCODE -ne 0) { throw 'M1 저장 전후 예측 불일치' }
+Write-Output 'M1 저장 자산 예측 재현 성공'
+$m1Train
+
+& $m1Python -X utf8 -B -m src.models.game_outcome.backtest --run-id $m1DataRun --include-poisson
+if ($LASTEXITCODE -ne 0) { throw 'M1 시즌별 백테스트 실패' }
 ```
 
 [프로젝트 예측 계약](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/f05fb302ea8916c2b9748e53496ce75d03a51e05/docs/standards/project_contract.md#m1)
