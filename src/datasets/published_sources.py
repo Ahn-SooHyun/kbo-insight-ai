@@ -46,6 +46,12 @@ EXPECTED_TARGETS = frozenset({
     ),
 })
 
+# 기존 44개 대상과 추가 포스트시즌 4개 논리 대상을 구분한다.
+SUPPLEMENT_TARGETS = frozenset(
+    f"dent-postseason-{year}"
+    for year in (2019, 2020, 2024, 2025)
+)
+
 USE_APPROVAL = {
     "approved_on": "2026-11-25",
     "scope": "비영리 대학 과제용 로컬 표준화·학습·내부 평가",
@@ -151,12 +157,14 @@ def write_json(path: Path, value: object) -> None:
             allow_nan=False,
             sort_keys=True,
         )
+
         stream.write("\n")
 
 
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise SourceError(f"필수 문자열 오류: {field}")
+
     return value
 
 
@@ -180,13 +188,12 @@ def intake_sources(
     as_of_run: str | None = None,
     expected_targets: frozenset[str] = EXPECTED_TARGETS,
 ) -> Intake:
-    """선정 범위의 전체 원본을 검증하고 시점별 채택 판본을 결정한다.
+    """선정 범위의 원본을 검증하고 시점별 채택 판본을 결정한다.
 
-    같은 해시를 참조하는 재실행은 새 원본으로 세지 않는다.
-    실패한 수집 결과와 원본의 이전 판본은 제거하지 않는다.
+    기존 범위 밖에 있는 승인된 포스트시즌 원본도 무결성을 확인하되,
+    해당 논리 대상을 기존 표준화 결과에 혼입하지 않는다.
     """
     published_dir = published_dir.resolve()
-
     runs_dir = published_dir / "runs"
     objects_dir = published_dir / "objects"
 
@@ -230,6 +237,7 @@ def intake_sources(
     history: list[Row] = []
 
     selection_open = True
+    legacy_scope = expected_targets == EXPECTED_TARGETS
 
     for _, run_id, manifest_path, manifest in manifests:
         targets = manifest.get("targets")
@@ -239,12 +247,16 @@ def intake_sources(
 
         for item in targets:
             target = as_row(item)
-            target_id = _text(
-                target.get("target_id"),
-                "target_id",
+            target_id = _text(target.get("target_id"), "target_id")
+
+            in_scope = target_id in expected_targets
+
+            known_supplement_outside_scope = (
+                legacy_scope
+                and target_id in SUPPLEMENT_TARGETS
             )
 
-            if target_id not in expected_targets:
+            if not in_scope and not known_supplement_outside_scope:
                 raise SourceError(
                     f"승인된 선정 범위 외 대상: {target_id}"
                 )
@@ -252,6 +264,7 @@ def intake_sources(
             result_path = (
                 manifest_path.parent / f"{target_id}.result.json"
             )
+
             result = as_row(read_json(result_path))
 
             if (
@@ -276,18 +289,23 @@ def intake_sources(
                     f"논리적 수집 대상 불일치: {target_id}"
                 )
 
-            history.append({
-                "run_id": run_id,
-                "target": target,
-                "result": result,
-                "manifest_path": (
-                    manifest_path.relative_to(published_dir).as_posix()
-                ),
-                "result_path": (
-                    result_path.relative_to(published_dir).as_posix()
-                ),
-                "eligible_at_selected_run": selection_open,
-            })
+            if in_scope:
+                history.append({
+                    "run_id": run_id,
+                    "target": target,
+                    "result": result,
+                    "manifest_path": (
+                        manifest_path.relative_to(
+                            published_dir
+                        ).as_posix()
+                    ),
+                    "result_path": (
+                        result_path.relative_to(
+                            published_dir
+                        ).as_posix()
+                    ),
+                    "eligible_at_selected_run": selection_open,
+                })
 
             if result.get("status") != "included":
                 continue
@@ -339,6 +357,7 @@ def intake_sources(
                     f"명세 크기 불일치: {target_id}"
                 )
 
+            # 승인된 범위 밖 추가 자료도 물리 원본 해시를 확인한다.
             if digest not in verified_objects:
                 if sha256_file(path) != digest:
                     raise SourceError(
@@ -346,6 +365,9 @@ def intake_sources(
                     )
 
                 verified_objects[digest] = size
+
+            if not in_scope:
+                continue
 
             source = SourceVersion(target, result, path)
 
@@ -379,6 +401,12 @@ def intake_sources(
             "성공 수집 이력과 실제 원본 목록이 일치하지 않습니다."
         )
 
+    # 논리 판본 수와 실제 물리 원본 수는 서로 다른 기준으로 계산한다.
+    scoped_objects = {
+        source.sha256: verified_objects[source.sha256]
+        for source in versions.values()
+    }
+
     return Intake(
         versions=tuple(
             sorted(
@@ -388,8 +416,8 @@ def intake_sources(
         ),
         selected=selected,
         history=tuple(history),
-        raw_bytes=sum(verified_objects.values()),
-        object_count=len(verified_objects),
+        raw_bytes=sum(scoped_objects.values()),
+        object_count=len(scoped_objects),
     )
 
 
@@ -424,7 +452,7 @@ def _json_records(source: SourceVersion) -> list[Row]:
 def read_source_rows(
     source: SourceVersion,
 ) -> Iterator[Row]:
-    """원본 확장자가 아닌 명세의 실제 파일 형식에 따라 읽는다."""
+    """명세에 저장된 실제 원본 파일 형식에 따라 읽는다."""
     suffix = Path(source.filename).suffix.lower()
 
     if suffix == ".json":
@@ -438,6 +466,7 @@ def read_source_rows(
             for line in stream:
                 if line.strip():
                     yield as_row(json.loads(line))
+
         return
 
     if suffix == ".csv":
@@ -456,7 +485,9 @@ def read_source_rows(
             for row in reader:
                 if None in row or None in row.values():
                     raise SourceError("CSV 필드 개수 불일치")
+
                 yield as_row(row)
+
         return
 
     raise SourceError(
@@ -468,7 +499,7 @@ def materialize_source(
     source: SourceVersion,
     directory: Path,
 ) -> Row:
-    """원본 대응 번호를 추가한 중간 자료와 스키마 증거를 저장한다."""
+    """원본 대응 행 번호와 스키마 검사 근거를 신규 저장한다."""
     suffix = Path(source.filename).suffix.lower()
     prefix = f"{source.target_id}-{source.sha256}"
     required = set(source.target.get("required_fields", []))
@@ -497,6 +528,7 @@ def materialize_source(
         pq.write_table(table, output)
 
         rows = table.num_rows
+
         schema = {
             field.name: {
                 "type": str(field.type),
@@ -558,7 +590,7 @@ def materialize_source(
     inspection = as_row(source.result.get("inspection", {}))
     expected_rows = inspection.get("rows")
 
-    # 포스트시즌 기존 수집 검증은 와일드카드 배열만 검사했다.
+    # 기존 2026 포스트시즌은 와일드카드 최소 배열만 검사했다.
     if (
         source.target_id != "dent-postseason-2026-wildcard-probe"
         and expected_rows is not None
