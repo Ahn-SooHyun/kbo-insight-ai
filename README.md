@@ -75,7 +75,9 @@ kbo-insight-ai/
 │   │   ├── model_players.py
 │   │   ├── published_sources.py
 │   │   └── standardize.py
-│   ├── evaluation
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   └── game_outcome.py
 │   ├── explainability
 │   ├── ingestion/
 │   │   ├── __init__.py
@@ -83,7 +85,11 @@ kbo-insight-ai/
 │   │   └── published.py
 │   ├── lineups
 │   ├── models/
-│   │   ├── game_outcome
+│   │   ├── __init__.py
+│   │   ├── game_outcome/
+│   │   │   ├── __init__.py
+│   │   │   ├── __main__.py
+│   │   │   └── model.py
 │   │   ├── game_state
 │   │   ├── next_pitch
 │   │   ├── plate_appearance
@@ -106,6 +112,9 @@ kbo-insight-ai/
 │   │   ├── __init__.py
 │   │   ├── test_collection.py
 │   │   └── test_published.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── test_game_outcome.py
 │   └── validation/
 │       ├── __init__.py
 │       ├── test_inspection.py
@@ -117,6 +126,7 @@ kbo-insight-ai/
     ├── planning/
     │   └── development_workflow.md
     └── standards/
+        ├── game_outcome_score.md
         └── project_contract.md
 ```
 
@@ -130,6 +140,9 @@ kbo-insight-ai/
 | `src/__init__.py`                           | 패키지 식별. 설정 읽기나 사업 기능을 자동 실행하지 않음 |
 | `src/__main__.py`                           | 도움말·설정 확인 명령과 CLI 로그                        |
 | `src/settings.py`                           | 설정 읽기·타입 및 범위 검증·경로 해석                   |
+| `src/models/game_outcome/model.py`          | 공용 득점 예측기 학습·공식 종료 득점 분포               |
+| `src/models/game_outcome/__main__.py`       | 경기 결과·득점 학습·평가·예측 CLI와 자산 관리           |
+| `src/evaluation/game_outcome.py`            | 득점·승무패 기준 비교와 확률 보정                       |
 | `src/ingestion/pilot.py`                    | 제한된 이닝 원본 수집·최소 구조 검사·원본/이력 보존     |
 | `src/ingestion/published.py`                | 승인 명세 기반 배포 파일 수집·원본 버전·실행 현황       |
 | `src/validation/raw_sample.py`              | 고정 원본의 파일 동일성·행 근거를 읽기 전용으로 검사    |
@@ -140,6 +153,7 @@ kbo-insight-ai/
 | `tests/ingestion/test_collection.py`        | 합성 응답 기반 수집·실패·보존 검증                      |
 | `tests/ingestion/test_published.py`         | 합성 파일 전체 수집·갱신·재개 및 불변 저장 검증         |
 | `tests/foundation/test_foundation.py`       | 설정·경로·오류·읽기 전용 동작 검증                      |
+| `tests/models/test_game_outcome.py`         | 경기 분할·결합 확률·입력·자산의 합성 검사               |
 | `tests/validation/test_inspection.py`       | 합성 Parquet 기반 원본 검사·실패 동작 검증              |
 | `tests/validation/test_standard_data.py`    | 원본 인수·표준 상태·판본 비교의 합성 자료 검사          |
 | `tests/validation/test_standard_quality.py` | 실제 변환 함수·집계 오류·격리·판본 검증 테스트          |
@@ -150,7 +164,7 @@ kbo-insight-ai/
 
 `pyproject.toml`·`.python-version`·`.gitignore`는 프로젝트 단위 파일이며, `kbo.toml`도 현재 설정 로더가 프로젝트 기준 위치에서 읽는다. 이를 별도 설정 폴더로 옮기려면 로더와 테스트·안내도 함께 변경해야 한다.
 
-수집·전처리·학습·예측은 실제 기능을 구현할 때 패키지 내부에서 책임에 맞게 분리한다. 현재는 해당 기능의 빈 폴더·모듈·클래스를 미리 만들지 않는다.
+경기 결과·득점 예측의 모델과 실행 진입점은 `src/models/game_outcome/`에 둔다. 기준 모델과의 비교·확률 지표는 `src/evaluation/`에서 계산한다. 소스 구조에 표시된 다른 기능 경로는 각 기능의 구현 위치를 안내한다.
 
 ### 문서의 역할
 
@@ -159,6 +173,8 @@ kbo-insight-ai/
 | README                                               | 프로젝트 소개·폴더 구조·설치·설정·기본 확인·결과 안내 |
 | [개발 흐름](docs/planning/development_workflow.md)   | 12개 작업의 선행 관계·입력·산출물·완료 증거·인수      |
 | [예측·평가 계약](docs/standards/project_contract.md) | 기능·정보 시점·정답·평가·미확정·재현성의 상세 원문    |
+
+[경기 결과·득점 예측 실행과 결과 계약](docs/standards/game_outcome_score.md)에서 M1 명령과 입출력 조건을 확인할 수 있다.
 
 데이터 담당은 [M3 정답](docs/standards/project_contract.md#m3-labels)과 [확정 대기](docs/standards/project_contract.md#decisions), 모델 담당은 [평가](docs/standards/project_contract.md#evaluation), 검토 담당은 [계약 검증표](docs/standards/project_contract.md#checks)와 [인수 체크](docs/planning/development_workflow.md#handover)를 함께 읽는다.
 
