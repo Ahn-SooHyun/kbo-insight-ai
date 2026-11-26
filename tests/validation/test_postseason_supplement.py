@@ -1,6 +1,7 @@
-"""보완 원본 선택, 기존 CLI 통합 및 선발 후보 추가 범위를 검증한다."""
+"""포스트시즌 원본·완료 근거·판본·CLI 및 선발 후보 추가 범위를 검증한다."""
 
-from contextlib import redirect_stdout
+from copy import deepcopy
+from contextlib import closing, redirect_stdout
 import hashlib
 import io
 import json
@@ -12,8 +13,12 @@ import unittest
 from unittest.mock import patch
 
 from src.__main__ import main
+from src.datasets.model_data import verify_version_inventory
 from src.datasets.postseason_supplement import (
     collection_run_for_supplement,
+    flatten_postseason,
+    normalize_season,
+    regular_completion_evidence,
     standardize_selected,
     unchanged_tables,
     verify_starter_extension,
@@ -32,6 +37,48 @@ UNKNOWN_RUN = "3" * 32
 
 OLD_GAME = "20240927200120080"
 NEW_GAME = "postseason:dent:2024:koreanSeries:1"
+
+
+def series_fixture() -> dict[str, object]:
+    """실제 Dent 원본과 동일한 문자열 시즌 구조의 최소 자료."""
+    return {
+        "season": "2024",
+        "games": [
+            {"gamePk": "regular-game-not-for-postseason"}
+        ],
+        "postseason": {
+            "wildCard": {
+                "isComplete": True,
+                "winnerId": 2002,
+            },
+            "koreanSeries": {
+                "name": "Korean Series",
+                "isComplete": True,
+                "championId": 2001,
+                "team1": {
+                    "id": 2001,
+                    "wins": 1,
+                    "isWinner": True,
+                },
+                "adv": {
+                    "id": 2008,
+                    "wins": 0,
+                    "isWinner": False,
+                },
+                "games": [
+                    {
+                        "game": 1,
+                        "date": "2024-10-21",
+                        "away": "Samsung Lions",
+                        "home": "KIA Tigers",
+                        "awayScore": 1,
+                        "homeScore": 5,
+                        "winnerId": 2001,
+                    }
+                ],
+            },
+        },
+    }
 
 
 def create_collection_run(
@@ -106,7 +153,407 @@ def create_collection_run(
     return object_path
 
 
+class PostseasonSupplementTests(unittest.TestCase):
+    """원본 형식, 실제 경기 결과 및 정규시즌 완료 근거를 검사한다."""
+
+    def test_string_and_integer_season(self) -> None:
+        """문자열 시즌과 정수 시즌을 동일하게 처리한다."""
+        for season in ("2019", "2020", "2024", "2025"):
+            with self.subTest(season=season):
+                self.assertEqual(
+                    normalize_season(season),
+                    int(season),
+                )
+
+        raw = series_fixture()
+
+        string_rows, string_series = flatten_postseason(
+            raw,
+            2024,
+        )
+
+        raw["season"] = 2024
+
+        integer_rows, integer_series = flatten_postseason(
+            raw,
+            2024,
+        )
+
+        self.assertEqual(string_rows, integer_rows)
+        self.assertEqual(string_series, integer_series)
+
+    def test_invalid_season_types_are_rejected(self) -> None:
+        """잘못된 입력 타입과 형식을 시즌으로 해석하지 않는다."""
+        invalid = (
+            None,
+            True,
+            False,
+            2024.0,
+            "2024.0",
+            " 2024",
+            "2024 ",
+            "024",
+            "abcd",
+            "２０２４",
+            [],
+            {},
+            0,
+        )
+
+        for value in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    normalize_season(value)
+
+    def test_only_existing_postseason_arrays_are_expanded(self) -> None:
+        """존재하는 경기 배열만 변환하고 미확보 라운드를 보존한다."""
+        raw = series_fixture()
+
+        rows, series = flatten_postseason(raw, 2024)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(series), 2)
+
+        self.assertEqual(
+            rows[0]["_stage"],
+            "koreanSeries",
+        )
+
+        self.assertEqual(
+            rows[0]["_completion_basis"],
+            "completed_series_score_winner",
+        )
+
+        self.assertNotIn("isFinal", rows[0])
+        self.assertIsNone(rows[0]["_season_complete"])
+
+        self.assertFalse(
+            series[0]["metadata"]["_games_array_present"]
+        )
+
+        self.assertEqual(series[0]["score_rows"], 0)
+
+        self.assertFalse(
+            series[1]["all_rounds_score_observed"]
+        )
+
+        self.assertNotIn(
+            "_source_row",
+            raw["postseason"]["koreanSeries"]["games"][0],
+        )
+
+        self.assertEqual(raw["season"], "2024")
+
+    def test_invalid_games_array_is_rejected(self) -> None:
+        """존재하지만 배열이 아닌 경기 필드를 거절한다."""
+        raw = series_fixture()
+        raw["postseason"]["koreanSeries"]["games"] = None
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_explicit_final_marker(self) -> None:
+        """원본의 명시적 경기 종료 표시를 구분한다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"]["games"][0][
+            "isFinal"
+        ] = True
+
+        rows, _ = flatten_postseason(raw, 2024)
+
+        self.assertEqual(
+            rows[0]["_completion_basis"],
+            "explicit_is_final",
+        )
+
+    def test_absent_final_marker_in_incomplete_series(self) -> None:
+        """미완료 시리즈의 점수를 종료 결과로 추정하지 않는다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"][
+            "isComplete"
+        ] = False
+
+        rows, _ = flatten_postseason(raw, 2024)
+
+        self.assertEqual(
+            rows[0]["_completion_basis"],
+            "not_final",
+        )
+
+    def test_explicit_nonfinal_is_not_inferred(self) -> None:
+        """명시된 경기 미종료 상태를 임의로 변경하지 않는다."""
+        raw = series_fixture()
+
+        series = raw["postseason"]["koreanSeries"]
+        series["isComplete"] = False
+        series["games"][0]["isFinal"] = False
+
+        rows, _ = flatten_postseason(raw, 2024)
+
+        self.assertEqual(
+            rows[0]["_completion_basis"],
+            "not_final",
+        )
+
+    def test_invalid_score_winner_is_rejected(self) -> None:
+        """실제 점수와 승자가 불일치하면 실패한다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"]["games"][0][
+            "winnerId"
+        ] = 2008
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_invalid_winner_type_is_rejected(self) -> None:
+        """실수 형태의 승자 ID를 정수 ID로 임의 처리하지 않는다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"]["games"][0][
+            "winnerId"
+        ] = 2001.0
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_duplicate_series_game_is_rejected(self) -> None:
+        """같은 시리즈 내 중복 경기 차수를 차단한다."""
+        raw = series_fixture()
+
+        games = raw["postseason"]["koreanSeries"]["games"]
+        games.append(deepcopy(games[0]))
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_series_score_mismatch_is_rejected(self) -> None:
+        """실제 경기 승수와 시리즈 승수가 다르면 실패한다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"]["team1"][
+            "wins"
+        ] = 2
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_wrong_season_is_rejected(self) -> None:
+        """정수 및 문자열 시즌 모두 기대 시즌과 일치해야 한다."""
+        raw = series_fixture()
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2025)
+
+        raw["season"] = 2024
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2025)
+
+    def test_wrong_game_date_season_is_rejected(self) -> None:
+        """경기 날짜가 원본 시즌과 다르면 거절한다."""
+        raw = series_fixture()
+
+        raw["postseason"]["koreanSeries"]["games"][0][
+            "date"
+        ] = "2025-10-21"
+
+        with self.assertRaises(ValueError):
+            flatten_postseason(raw, 2024)
+
+    def test_shared_raw_hash_keeps_distinct_logical_targets(self) -> None:
+        """같은 물리 해시를 참조하는 서로 다른 논리 대상을 유지한다."""
+        records = [
+            {
+                "target_id": "dent-results-2024",
+                "source_sha": "a" * 64,
+                "selected": True,
+            },
+            {
+                "target_id": "dent-postseason-2024",
+                "source_sha": "a" * 64,
+                "selected": True,
+            },
+        ]
+
+        verify_version_inventory(
+            records,
+            object_count=1,
+            logical_targets=2,
+        )
+
+        with self.assertRaises(ValueError):
+            verify_version_inventory(
+                records,
+                object_count=2,
+                logical_targets=2,
+            )
+
+    def test_duplicate_version_is_rejected(self) -> None:
+        """동일 논리 대상의 중복 판본은 거절한다."""
+        record = {
+            "target_id": "dent-results-2024",
+            "source_sha": "a" * 64,
+            "selected": True,
+        }
+
+        with self.assertRaises(ValueError):
+            verify_version_inventory(
+                [record, record],
+                object_count=1,
+                logical_targets=1,
+            )
+
+    def test_missing_selected_version_is_rejected(self) -> None:
+        """성공 판본이 있어도 채택 대상이 누락되면 실패한다."""
+        records = [
+            {
+                "target_id": "old-target",
+                "source_sha": "a" * 64,
+                "selected": False,
+            },
+            {
+                "target_id": "new-target",
+                "source_sha": "b" * 64,
+                "selected": True,
+            },
+        ]
+
+        with self.assertRaises(ValueError):
+            verify_version_inventory(
+                records,
+                object_count=2,
+                logical_targets=1,
+            )
+
+    def test_missing_pbp_games_rejects_completion_evidence(self) -> None:
+        """완료 경기와 PBP 대응 집합이 없으면 시즌 완료를 확정하지 않는다."""
+        with closing(sqlite3.connect(":memory:")) as db:
+            db.executescript(
+                """
+                CREATE TABLE games(
+                    game_id TEXT,
+                    date TEXT,
+                    season INTEGER,
+                    competition TEXT,
+                    home_team_id INTEGER,
+                    away_team_id INTEGER,
+                    source_sha TEXT,
+                    result_valid INTEGER,
+                    status TEXT
+                );
+
+                CREATE TABLE game_checks(
+                    game_id TEXT,
+                    final_score_match INTEGER,
+                    source_sha TEXT
+                );
+
+                INSERT INTO games VALUES (
+                    'game-1',
+                    '2023-10-17',
+                    2023,
+                    'regular',
+                    2001,
+                    2002,
+                    'regular-hash',
+                    1,
+                    'Final'
+                );
+                """
+            )
+
+            with self.assertRaises(ValueError):
+                regular_completion_evidence(db, 2023)
+
+    def test_complete_regular_season_evidence(self) -> None:
+        """720경기, 팀별 144경기, PBP 집합 및 실제 점수를 대조한다."""
+        with closing(sqlite3.connect(":memory:")) as db:
+            db.executescript(
+                """
+                CREATE TABLE games(
+                    game_id TEXT PRIMARY KEY,
+                    date TEXT,
+                    season INTEGER,
+                    competition TEXT,
+                    home_team_id INTEGER,
+                    away_team_id INTEGER,
+                    source_sha TEXT,
+                    result_valid INTEGER,
+                    status TEXT
+                );
+
+                CREATE TABLE game_checks(
+                    game_id TEXT PRIMARY KEY,
+                    final_score_match INTEGER,
+                    source_sha TEXT
+                );
+                """
+            )
+
+            games = []
+
+            for home in range(2001, 2011):
+                for away in range(home + 1, 2011):
+                    for index in range(16):
+                        games.append((
+                            f"{home}:{away}:{index}",
+                            "2023-10-17",
+                            2023,
+                            "regular",
+                            home,
+                            away,
+                            "regular-hash",
+                            1,
+                            "Final",
+                        ))
+
+            db.executemany(
+                "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?)",
+                games,
+            )
+
+            db.executemany(
+                "INSERT INTO game_checks VALUES (?,?,?)",
+                (
+                    (game[0], 1, "pbp-hash")
+                    for game in games
+                ),
+            )
+
+            evidence = regular_completion_evidence(db, 2023)
+
+            self.assertEqual(evidence["completed_games"], 720)
+            self.assertEqual(evidence["pbp_games"], 720)
+            self.assertTrue(evidence["game_sets_match"])
+
+            self.assertEqual(
+                evidence["label_ready_date"],
+                "2023-10-18",
+            )
+
+            self.assertTrue(
+                all(
+                    count == 144
+                    for count in evidence["team_games"].values()
+                )
+            )
+
+            db.execute(
+                "UPDATE game_checks SET final_score_match=0 "
+                "WHERE game_id=?",
+                (games[0][0],),
+            )
+
+            with self.assertRaises(ValueError):
+                regular_completion_evidence(db, 2023)
+
+
 class SourceScopeTests(unittest.TestCase):
+    """기존 및 보완 원본의 선정 범위와 실행 경계를 검사한다."""
+
     def setUp(self) -> None:
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -132,14 +579,19 @@ class SourceScopeTests(unittest.TestCase):
         )
 
     def test_legacy_scope_keeps_base_targets_only(self) -> None:
-        """과거 표준화 범위에서 승인된 새 수집 이력을 구분한다."""
+        """기존 표준화 범위에서 보완 원본의 논리 대상을 분리한다."""
         intake = intake_sources(
             self.published,
             as_of_run=BASE_RUN,
         )
 
         self.assertEqual(set(intake.selected), EXPECTED_TARGETS)
-        self.assertEqual(len(intake.versions), len(EXPECTED_TARGETS))
+
+        self.assertEqual(
+            len(intake.versions),
+            len(EXPECTED_TARGETS),
+        )
+
         self.assertEqual(intake.object_count, 1)
 
         self.assertEqual(
@@ -155,7 +607,7 @@ class SourceScopeTests(unittest.TestCase):
         )
 
     def test_supplement_scope_includes_both_target_groups(self) -> None:
-        """보완 경로는 기존 및 추가 논리 대상을 모두 선택한다."""
+        """보완 경로가 기존 및 추가 논리 대상을 모두 선택하는지 검사한다."""
         intake = intake_sources(
             self.published,
             as_of_run=SUPPLEMENT_RUN,
@@ -178,7 +630,7 @@ class SourceScopeTests(unittest.TestCase):
         )
 
     def test_outside_scope_corruption_is_not_ignored(self) -> None:
-        """기존 논리 선정 범위 밖의 승인 원본도 해시를 검사한다."""
+        """기존 범위 밖의 승인된 보완 원본도 해시 오류를 거절한다."""
         original = self.supplement_object.read_bytes()
 
         self.supplement_object.write_bytes(
@@ -192,7 +644,7 @@ class SourceScopeTests(unittest.TestCase):
             )
 
     def test_unknown_target_is_still_rejected(self) -> None:
-        """등록되지 않은 대상의 기존 차단 기준을 보존한다."""
+        """등록되지 않은 논리 대상의 기존 차단 기준을 유지한다."""
         create_collection_run(
             self.published,
             UNKNOWN_RUN,
@@ -205,6 +657,7 @@ class SourceScopeTests(unittest.TestCase):
             intake_sources(self.published)
 
     def test_collection_cutoff_selects_correct_workflow(self) -> None:
+        """수집 실행 경계에 따라 기존 및 보완 경로를 분리한다."""
         settings = SimpleNamespace(raw_dir=self.raw)
 
         self.assertIsNone(
@@ -231,7 +684,7 @@ class SourceScopeTests(unittest.TestCase):
         )
 
     def test_previous_cutoff_routes_to_original_standardization(self) -> None:
-        """추가 수집 이전 실행은 기존 표준화에 전달한다."""
+        """보완 수집 이전의 실행은 기존 표준화 경로를 사용한다."""
         settings = SimpleNamespace(raw_dir=self.raw)
 
         with patch(
@@ -252,7 +705,7 @@ class SourceScopeTests(unittest.TestCase):
         )
 
     def test_supplement_cutoff_routes_to_supplement_standardization(self) -> None:
-        """보완 수집 실행은 기존 표준판을 기준으로 증분 생성한다."""
+        """보완 수집 실행은 기준 표준판에서 증분 생성한다."""
         settings = SimpleNamespace(raw_dir=self.raw)
         verification = "4" * 32
 
@@ -279,6 +732,8 @@ class SourceScopeTests(unittest.TestCase):
 
 
 class StarterExtensionTests(unittest.TestCase):
+    """기존 선발 후보 불변성과 신규 포스트시즌 후보의 정보 시점을 검사한다."""
+
     def setUp(self) -> None:
         self.db = sqlite3.connect(":memory:")
         self.addCleanup(self.db.close)
@@ -345,7 +800,10 @@ class StarterExtensionTests(unittest.TestCase):
             )
 
             self.db.execute(
-                f"INSERT INTO {schema}.m1_index VALUES (?,?,?)",
+                f"""
+                INSERT INTO {schema}.m1_index
+                VALUES (?,?,?)
+                """,
                 (
                     OLD_GAME,
                     OLD_GAME,
@@ -354,7 +812,10 @@ class StarterExtensionTests(unittest.TestCase):
             )
 
             self.db.execute(
-                f"INSERT INTO {schema}.m1_inputs VALUES (?,?,?,?)",
+                f"""
+                INSERT INTO {schema}.m1_inputs
+                VALUES (?,?,?,?)
+                """,
                 (
                     OLD_GAME,
                     "regular",
@@ -364,7 +825,10 @@ class StarterExtensionTests(unittest.TestCase):
             )
 
             self.db.execute(
-                f"INSERT INTO {schema}.starter_history VALUES (?,?,?,?)",
+                f"""
+                INSERT INTO {schema}.starter_history
+                VALUES (?,?,?,?)
+                """,
                 (
                     OLD_GAME,
                     "2024-09-27",
@@ -412,6 +876,7 @@ class StarterExtensionTests(unittest.TestCase):
         )
 
     def test_valid_postseason_extension(self) -> None:
+        """기존 행이 유지되고 신규 포스트시즌 사전 기록만 추가된다."""
         result = verify_starter_extension(self.db)
 
         self.assertEqual(result["previous_rows"], 1)
@@ -422,6 +887,7 @@ class StarterExtensionTests(unittest.TestCase):
         self.assertEqual(result["invalid_added_rows"], 0)
 
     def test_existing_row_change_is_rejected(self) -> None:
+        """기존 선발 후보 행의 값 변경을 거절한다."""
         self.db.execute(
             """
             UPDATE main.starter_pre_game
@@ -434,8 +900,12 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_existing_row_deletion_is_rejected(self) -> None:
+        """기존 선발 후보 행의 삭제를 거절한다."""
         self.db.execute(
-            "DELETE FROM main.starter_pre_game WHERE game_id=?",
+            """
+            DELETE FROM main.starter_pre_game
+            WHERE game_id=?
+            """,
             (OLD_GAME,),
         )
 
@@ -443,10 +913,12 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_duplicate_row_is_rejected(self) -> None:
+        """같은 경기·팀·선수 행의 중복을 거절한다."""
         self.db.execute(
             """
             INSERT INTO main.starter_pre_game
-            SELECT * FROM main.starter_pre_game WHERE game_id=?
+            SELECT * FROM main.starter_pre_game
+            WHERE game_id=?
             """,
             (NEW_GAME,),
         )
@@ -455,6 +927,7 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_future_start_is_rejected(self) -> None:
+        """기준 경기 당일 이후의 선발 이력 혼입을 차단한다."""
         self.db.execute(
             """
             UPDATE main.starter_pre_game
@@ -469,6 +942,7 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_future_appearance_is_rejected(self) -> None:
+        """기준 경기 이후의 등판 이력 혼입을 차단한다."""
         self.db.execute(
             """
             UPDATE main.starter_pre_game
@@ -483,10 +957,12 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_non_postseason_extension_is_rejected(self) -> None:
+        """보완 범위 밖 정규시즌 경기의 신규 행을 거절한다."""
         self.db.execute(
             """
             UPDATE main.m1_inputs
-            SET competition='regular' WHERE sample_id=?
+            SET competition='regular'
+            WHERE sample_id=?
             """,
             (NEW_GAME,),
         )
@@ -495,6 +971,7 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_unrelated_team_is_rejected(self) -> None:
+        """해당 경기의 참가 팀이 아닌 선수 기록을 거절한다."""
         self.db.execute(
             """
             UPDATE main.starter_pre_game
@@ -507,16 +984,18 @@ class StarterExtensionTests(unittest.TestCase):
             verify_starter_extension(self.db)
 
     def test_missing_past_start_evidence_is_rejected(self) -> None:
+        """실제 과거 선발 근거가 없는 신규 후보를 거절한다."""
         self.db.execute("DELETE FROM main.starter_history")
 
         with self.assertRaises(ValueError):
             verify_starter_extension(self.db)
 
     def test_existing_game_cannot_receive_new_starter_rows(self) -> None:
-        """기존 경기의 선발 후보 추가를 정상 변경으로 간주하지 않는다."""
+        """기존 경기의 신규 선발 후보는 정상 보완으로 인정하지 않는다."""
         self.db.execute(
             """
-            INSERT INTO previous.m1_index VALUES (?,?,?)
+            INSERT INTO previous.m1_index
+            VALUES (?,?,?)
             """,
             (
                 NEW_GAME,
@@ -530,7 +1009,10 @@ class StarterExtensionTests(unittest.TestCase):
 
 
 class WorkflowCliTests(unittest.TestCase):
+    """기존 CLI 호환 및 모델 변경 범위 제한을 검사한다."""
+
     def test_standardize_cli_forwards_supplement_arguments(self) -> None:
+        """기존 표준화 CLI가 보완 기준 및 비교 설정을 전달한다."""
         settings = SimpleNamespace(log_level="ERROR")
 
         with (
@@ -562,6 +1044,7 @@ class WorkflowCliTests(unittest.TestCase):
         )
 
     def test_validation_cli_forwards_comparison(self) -> None:
+        """기존 검증 CLI가 검증 대상과 비교 실행 ID를 전달한다."""
         settings = SimpleNamespace(log_level="ERROR")
         comparison = f"{BASE_RUN}:{'4' * 32}"
 
@@ -591,15 +1074,27 @@ class WorkflowCliTests(unittest.TestCase):
         )
 
     def test_unexpected_table_changes_remain_blocked(self) -> None:
-        """허용 대상 외의 모든 모델 테이블 변경을 차단한다."""
+        """허용 대상 이외의 모델 테이블 변경을 지속 차단한다."""
         previous = {
-            "starter_pre_game": {"rows": 1, "sha256": "a"},
-            "m2_targets": {"rows": 2, "sha256": "b"},
+            "starter_pre_game": {
+                "rows": 1,
+                "sha256": "a",
+            },
+            "m2_targets": {
+                "rows": 2,
+                "sha256": "b",
+            },
         }
 
         current = {
-            "starter_pre_game": {"rows": 2, "sha256": "c"},
-            "m2_targets": {"rows": 2, "sha256": "b"},
+            "starter_pre_game": {
+                "rows": 2,
+                "sha256": "c",
+            },
+            "m2_targets": {
+                "rows": 2,
+                "sha256": "b",
+            },
         }
 
         self.assertEqual(

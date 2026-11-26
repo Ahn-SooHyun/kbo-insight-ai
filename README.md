@@ -111,7 +111,6 @@ kbo-insight-ai/
 │       ├── test_inspection.py
 │       ├── test_model_data.py
 │       ├── test_postseason_supplement.py
-│       ├── test_postseason_workflow.py
 │       ├── test_standard_data.py
 │       └── test_standard_quality.py
 └── docs/
@@ -546,6 +545,8 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 ```
 
 이전 모델과 보완 모델의 비교는 `starter_pre_game`의 기존 행을 보존하며, 신규 포스트시즌 경기의 실제 참가 팀과 기준일 이전 선발 기록에서만 추가 행을 허용한다. 행의 중복·삭제·변경 또는 미래 시점 혼입은 실패로 처리한다.
+
+포스트시즌 원본 및 완료 근거 테스트 18개와 원본 범위·CLI·선발 후보 추가 검증 테스트 20개는 `tests/validation/test_postseason_supplement.py`에 함께 유지한다. 기존 94개를 포함하여 현재 전체 회귀 테스트 기준은 132개다.
 
 실행 결과에 표시된 새 standard run/verification과 model run을 사용한다. `quality.json`, 최종 검증 JSON의 `handoff`, 모델 `manifest.json` 및 첫 모델 실행 폴더의 `supplement-impact.json`에서 이전/새 자료의 변경 테이블·표본 수·기간별 유효 Count·분모·관측 제한을 확인한다. 고정 시간 분할은 유지하며 최종 Test는 무결성/분할 검사만 수행한다. 2023~2025년 잔여 정답과 2025년 28일 정답은 실제 생성 결과에서만 확정한다. 기존 모델 예측기 수·학습 범위·시뮬레이션의 후속 작업은 변경하지 않는다.
 
