@@ -1,7 +1,6 @@
 """M3 개선 후보·공정한 선정·공통 비율·시즌 경계 검증."""
 
 from copy import deepcopy
-from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
