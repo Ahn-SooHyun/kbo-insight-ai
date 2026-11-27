@@ -23,6 +23,7 @@ from ..regular_season.rules import (
 from . import (
     DRAW_DIFFICULTY_WEIGHT,
     MAX_STARTER_FORECAST_DAYS,
+    MIN_PROJECTED_APPEARANCE_INTERVAL,
     MIN_TEAM_SAMPLE,
     PROBABILITY_TOLERANCE,
     RECENT_DAYS,
@@ -31,9 +32,11 @@ from . import (
     SCHEMA,
     STARTER_HISTORY_DAYS,
     STARTER_RULE_VERSION,
+    STARTER_SELECTED_METHOD,
     TEAM_RULE_VERSION,
     TOP_K,
     WORKLOAD_DAYS,
+    starter_selection,
 )
 from .data import StarterData
 
@@ -56,6 +59,8 @@ class Candidate:
     workload_observed_games: int
     workload_missing_pitch_counts: int
     last_team_evidence_date: str
+    workload_missing_known_starts: int
+    workload_status: str
 
 
 @dataclass
@@ -66,6 +71,15 @@ class StarterRanking:
     proposed: tuple[Candidate, ...]
     exclusions: dict[str, int]
     observed_starts: int
+
+    @property
+    def operational(self) -> tuple[Candidate, ...]:
+        """검증에서 선정한 고정 운영 순위를 반환한다."""
+
+        if STARTER_SELECTED_METHOD == "baseline":
+            return self.baseline
+
+        raise ValueError("지원하지 않는 운영 선발 규칙")
 
 
 @dataclass(frozen=True)
@@ -100,15 +114,17 @@ def baseline_key(
 def proposed_key(
     candidate: Candidate,
 ) -> tuple[int, int, bool, int, int, str]:
-    """짧은 등판 간격과 로테이션 간격을 우선 고려한다.
+    """비교 실험에 사용한 초기 제안 규칙을 보존한다.
 
-    최근 투구 수는 관측값일 때만 사용한다.
-    결측 자료를 투구 수 0으로 해석하지 않는다.
+    짧은 등판 간격과 로테이션 간격, 관측 투구 수 및
+    선발 횟수를 고려한다. 기존 개발 비교 재현을 위해
+    순위 계산 자체는 변경하지 않는다.
     """
 
     short_rest_penalty = max(
         0,
-        2 - candidate.projected_appearance_interval,
+        MIN_PROJECTED_APPEARANCE_INTERVAL
+        - candidate.projected_appearance_interval,
     )
 
     rotation_distance = abs(
@@ -270,6 +286,34 @@ def rank_starters(
                 if row.observed_pitches is not None
             )
 
+        # 관측 행 자체가 누락된 알려진 선발 경기를 구분한다.
+        # 기존 제안 규칙의 관측 투구 합계 정의는 보존한다.
+        known_start_keys = {
+            (row.game_id, row.team_id)
+            for row in starts
+            if row.day >= workload_start
+        }
+
+        observed_appearance_keys = {
+            (row.game_id, row.team_id)
+            for row in workload_rows
+        }
+
+        missing_known_starts = len(
+            known_start_keys - observed_appearance_keys
+        )
+
+        if not workload_rows:
+            workload_status = "unobserved"
+
+        elif missing_known_starts or missing_pitches:
+            workload_status = "partial_observed"
+
+        else:
+            # 알려진 모든 선발 기록을 연결했더라도
+            # 구원 등판까지 완전하다는 증거는 아니다.
+            workload_status = "observed_rows_only"
+
         candidates.append(
             Candidate(
                 player_id=player_id,
@@ -296,6 +340,8 @@ def rank_starters(
                 workload_observed_games=len(workload_rows),
                 workload_missing_pitch_counts=missing_pitches,
                 last_team_evidence_date=last_seen.isoformat(),
+                workload_missing_known_starts=missing_known_starts,
+                workload_status=workload_status,
             )
         )
 
@@ -320,6 +366,12 @@ def starter_report(
     next_day: date,
 ) -> dict[str, object]:
     """예상 후보와 자료 지원 범위를 경기별로 표현한다."""
+
+    if team_id not in (fixture.home, fixture.away):
+        raise ValueError("예상 선발 대상 팀과 경기 불일치")
+
+    if fixture.day < cutoff:
+        raise ValueError("기준일 이전 경기의 예상 선발 요청")
 
     history_start = cutoff - timedelta(
         days=STARTER_HISTORY_DAYS
@@ -355,15 +407,19 @@ def starter_report(
         "observed_starts": None,
         "starter_history_coverage": None,
         "exclusions": {},
+        "selected_method": STARTER_SELECTED_METHOD,
         "ranking_method": (
-            "short_rest_rotation_workload_starts_player_id"
+            "longest_start_interval_previous_date_player_id"
         ),
+        "selection_split": "validation",
+        "selection_season": cutoff.year,
         "limitations": [
             "observed_affiliation_is_not_current_roster",
             "observed_pitches_are_not_total_workload",
             "future_appearances_are_not_known",
             "rank_is_not_probability",
             "same_day_starters_not_jointly_assigned",
+            "next_game_is_based_on_available_schedule",
         ],
     }
 
@@ -384,6 +440,8 @@ def starter_report(
         fixture.day,
     )
 
+    operational = ranking.operational
+
     if ranking.observed_starts > team_games:
         raise ValueError("선발 이력과 팀 경기 수 불일치")
 
@@ -394,14 +452,14 @@ def starter_report(
             team_games,
         ),
         "exclusions": ranking.exclusions,
-        "eligible_candidate_count": len(ranking.proposed),
+        "eligible_candidate_count": len(operational),
         "candidate_count": min(
-            len(ranking.proposed),
+            len(operational),
             TOP_K,
         ),
     })
 
-    if not ranking.proposed:
+    if not operational:
         result["reason"] = "insufficient_eligible_starter_history"
         return result
 
@@ -410,7 +468,7 @@ def starter_report(
     if (
         ranking.observed_starts < team_games
         or ranking.exclusions
-        or len(ranking.proposed) < TOP_K
+        or len(operational) < TOP_K
     ):
         result["status"] = "estimated_limited"
         result["reason"] = "partial_starter_evidence"
@@ -421,7 +479,7 @@ def starter_report(
             **asdict(candidate),
         }
         for rank, candidate in enumerate(
-            ranking.proposed[:TOP_K],
+            operational[:TOP_K],
             start=1,
         )
     ]
@@ -479,6 +537,12 @@ def record_summary(
         ),
         "win_rate_denominator": decisions,
         "run_rate_denominator": games,
+        "win_rate_reason": (
+            None if decisions else "no_decided_games"
+        ),
+        "run_rate_reason": (
+            None if games else "no_observations"
+        ),
     }
 
 
@@ -823,6 +887,14 @@ def forecast_remaining(
             inputs,
         )
 
+        # 경기 분석에서 선택하지 않은 경기까지 확률을 검사한다.
+        # 손상된 모델 출력은 정상적인 전망 누락으로 숨기지 않는다.
+        team_probabilities(
+            forecast,
+            fixture,
+            fixture.home,
+        )
+
         rows.append(
             FixtureForecast(fixture, forecast)
         )
@@ -957,6 +1029,7 @@ def analyze(
         "games": game_reports,
         "teams": team_reports,
         "missing_pairs": missing_pairs,
+        "starter_selection": starter_selection(),
         "rule_versions": {
             "starter": STARTER_RULE_VERSION,
             "team": TEAM_RULE_VERSION,

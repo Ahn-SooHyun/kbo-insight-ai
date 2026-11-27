@@ -29,7 +29,11 @@ from ..regular_season.data import (
     verify_assets,
 )
 
-from . import SUPPORTED_SEASON, VERSION
+from . import (
+    SUPPORTED_SEASON,
+    VERSION,
+    starter_selection,
+)
 from .analysis import analyze
 from .data import read_starter_data
 from .evaluation import evaluate_starters
@@ -261,6 +265,7 @@ def execute(
             timezone.utc
         ).isoformat(),
         "source_sha256": source_hashes(),
+        "starter_selection": starter_selection(),
     }
 
 
