@@ -50,6 +50,7 @@ from ..regular_season.rules import (
     validate_schedule,
 )
 
+from . import SUPPORTED_SEASON
 from .engine import ArchiveState, SeedInput
 from .rules import (
     STAGES,
@@ -59,6 +60,10 @@ from .rules import (
     get_rules,
 )
 
+
+PLAYOFF_SLOTS = get_regular_rules(
+    SUPPORTED_SEASON
+).playoff_slots
 
 PARENT_FILES = {
     "scenario": "scenario.json",
@@ -97,6 +102,7 @@ ARCHIVE_REFERENCE_URLS = (
     "View.aspx?bdSe=11730",
     "https://www.koreabaseball.com/MediaNews/Notice/"
     "View.aspx?bdSe=11744",
+    "https://www.yna.co.kr/view/AKR20251029118052007",
 )
 
 
@@ -123,7 +129,7 @@ def seed_input(
     row: Iteration,
     teams: tuple[int, ...],
 ) -> SeedInput:
-    """반복별 순위·진출·시드의 의미와 타입을 검사한다."""
+    """반복별 순위·진출·시드를 기존 정규시즌 계약에 맞게 인수한다."""
     require(
         row["schema"] == PARENT_ITERATION_SCHEMA,
         "부모 반복 스키마 불일치",
@@ -143,7 +149,13 @@ def seed_input(
     )
 
     qualifications: dict[int, bool | None] = {}
-    ranks: dict[int, int] = {}
+    first_status: dict[int, bool | None] = {}
+    ranks: dict[int, int | None] = {}
+
+    # 진출권 안의 확정 순위만 시드로 사용한다.
+    # 진출권 밖 공동 순위는 기존 정규시즌 규칙에서 허용된다.
+    ranked_qualifiers: dict[int, int] = {}
+
     first_teams: list[int] = []
     reasons: set[str] = set()
 
@@ -166,9 +178,16 @@ def seed_input(
         )
 
         qualifications[team] = qualifies
+        first_status[team] = first
+        ranks[team] = rank
 
         if first is True:
             first_teams.append(team)
+
+            require(
+                qualifies is True,
+                "정규시즌 1위와 진출 상태 불일치",
+            )
 
         if rank is not None:
             require(
@@ -178,17 +197,18 @@ def seed_input(
             )
 
             require(
-                rank not in ranks,
-                "확정 순위 중복",
-            )
-
-            ranks[rank] = team
-
-            require(
                 first == (rank == 1)
-                and qualifies == (rank <= 5),
+                and qualifies == (rank <= PLAYOFF_SLOTS),
                 "순위와 1위·진출 상태 불일치",
             )
+
+            if rank <= PLAYOFF_SLOTS:
+                require(
+                    rank not in ranked_qualifiers,
+                    "포스트시즌 확정 시드 중복",
+                )
+
+                ranked_qualifiers[rank] = team
 
         reason = item["reason"]
 
@@ -205,7 +225,12 @@ def seed_input(
         "정규시즌 1위 구단 중복",
     )
 
-    rank_resolved = len(ranks) == len(teams)
+    # 순위 확정 여부는 순위 값의 유일성이 아니라
+    # 각 구단이 확정 순위를 보유했는지로 판단해야 한다.
+    rank_resolved = all(
+        rank is not None
+        for rank in ranks.values()
+    )
 
     qualification_resolved = all(
         value is not None
@@ -238,7 +263,7 @@ def seed_input(
             isinstance(qualifiers, list)
             and all(type(team) is int for team in qualifiers)
             and qualifiers == expected
-            and len(expected) == 5,
+            and len(expected) == PLAYOFF_SLOTS,
             "부모 반복 진출 구단 불일치",
         )
 
@@ -252,12 +277,17 @@ def seed_input(
 
     expected_seeds = None
 
-    if qualification_resolved and all(
-        rank in ranks for rank in range(1, 6)
+    expected_ranks = set(
+        range(1, PLAYOFF_SLOTS + 1)
+    )
+
+    if (
+        qualification_resolved
+        and set(ranked_qualifiers) == expected_ranks
     ):
         expected_seeds = [
-            ranks[rank]
-            for rank in range(1, 6)
+            ranked_qualifiers[rank]
+            for rank in range(1, PLAYOFF_SLOTS + 1)
         ]
 
     require(
@@ -269,7 +299,8 @@ def seed_input(
         require(
             isinstance(seeds, list)
             and all(type(team) is int for team in seeds)
-            and len(seeds) == 5
+            and len(seeds) == PLAYOFF_SLOTS
+            and len(set(seeds)) == PLAYOFF_SLOTS
             and sorted(seeds) == qualifiers,
             "부모 반복 시드 구성 오류",
         )
@@ -287,6 +318,8 @@ def seed_input(
             first_teams[0] if first_teams else None
         ),
         reasons=tuple(sorted(reasons)),
+        ranks=ranks,
+        first_status=first_status,
     )
 
 
@@ -651,7 +684,7 @@ def verify_completion(
 
     expected = tuple(
         as_row(archived_seeds[str(rank)])["id"]
-        for rank in range(1, 6)
+        for rank in range(1, PLAYOFF_SLOTS + 1)
     )
 
     require(
@@ -673,12 +706,17 @@ def verify_completion(
     )
 
     winner = evidence.get("winnerId")
+    champion = evidence.get("championId")
 
     if winner is None:
-        winner = evidence.get("championId")
+        winner = champion
 
     require(
         winner == state.winner
+        and (
+            champion is None
+            or champion == state.winner
+        )
         and higher["isWinner"]
         == (state.winner == state.higher)
         and lower["isWinner"]
@@ -796,8 +834,6 @@ def read_archive(
                 "일정과 완료 경기 중복 연결",
             )
 
-            matched.add(linked)
-
             (
                 game_id,
                 source_key,
@@ -846,6 +882,8 @@ def read_archive(
                 away_score=away_score,
             )
 
+            # 모든 연결 조건을 통과한 경기만 인수 성공으로 기록한다.
+            matched.add(linked)
             groups[stage].append(game)
             sources[stage].add(source)
 
@@ -920,6 +958,8 @@ def audit_archive_bracket(
     rules = get_rules(season)
     advancing = seeds[4]
 
+    previous_end: date | None = None
+
     for index, rule in enumerate(rules):
         stage = rule.stage
 
@@ -934,6 +974,14 @@ def audit_archive_bracket(
 
         try:
             for game in archive.games.get(stage, ()):
+                game_day = parse_day(game.day)
+
+                require(
+                    previous_end is None
+                    or game_day > previous_end,
+                    "이전 라운드 종료일과 후속 경기 날짜 충돌",
+                )
+
                 state.apply(game)
 
             if state.winner is None:
@@ -965,6 +1013,9 @@ def audit_archive_bracket(
             )
 
             advancing = state.winner
+            previous_end = parse_day(
+                state.games[-1].day
+            )
 
         except (ValueError, TypeError, KeyError) as exc:
             archive.blocked[stage] = (
@@ -1059,6 +1110,37 @@ def load_inputs(
                 len(completed) < regular_rules.total_games,
                 "정규시즌 종료 이후의 기준일은 "
                 "원천 판본 재생 모드를 사용합니다.",
+            )
+
+            # 포스트시즌이 이미 시작된 날짜의 완료 경기나
+            # 일정 근거를 부모 모드에서 조용히 무시하지 않는다.
+            prior_postseason = standard.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM eligible_games
+                    WHERE season = ?
+                      AND competition = 'postseason'
+                      AND date < ?
+                )
+                """,
+                (season, cutoff.isoformat()),
+            ).fetchone()
+
+            require(
+                prior_postseason is not None
+                and prior_postseason[0] == 0,
+                "기준일 이전 포스트시즌 완료 경기가 존재합니다.",
+            )
+
+            require(
+                not read_schedule_rows(
+                    standard,
+                    "postseason_schedule",
+                    season,
+                    cutoff,
+                ),
+                "기준일 이전 포스트시즌 일정 근거가 존재합니다.",
             )
 
             mode = "regular_season_joint_scenario"

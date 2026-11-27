@@ -41,6 +41,15 @@ class SeedInput:
     regular_first: int | None
     reasons: tuple[str, ...] = ()
 
+    # 전체 대진이 미결정이어도 구단별 확정 상태를 보존한다.
+    ranks: dict[int, int | None] = field(
+        default_factory=dict
+    )
+
+    first_status: dict[int, bool | None] = field(
+        default_factory=dict
+    )
+
 
 @dataclass
 class ArchiveState:
@@ -87,6 +96,8 @@ class IterationResult:
             "qualifiers": self.draw.qualifiers,
             "qualification": self.draw.qualification,
             "regular_first": self.draw.regular_first,
+            "regular_ranks": self.draw.ranks,
+            "regular_first_status": self.draw.first_status,
             "seed_reasons": self.draw.reasons,
             "rounds": {
                 stage: asdict(result)
@@ -239,7 +250,9 @@ def simulate_round(
             state.apply(game)
 
         except ValueError as exc:
-            reason = f"archive_rule_conflict: {exc}"
+            if reason is None:
+                reason = f"archive_rule_conflict: {exc}"
+
             break
 
     if reason is not None:
@@ -416,6 +429,20 @@ def simulate(
     return results
 
 
+def regular_first_event(
+    draw: SeedInput,
+    team: int,
+) -> bool | None:
+    """부모 반복의 개별 정규시즌 1위 사건을 보존한다."""
+    if draw.regular_first is not None:
+        return draw.regular_first == team
+
+    if draw.qualification.get(team) is False:
+        return False
+
+    return draw.first_status.get(team)
+
+
 def team_event(
     row: IterationResult,
     team: int,
@@ -454,8 +481,26 @@ def team_event(
         ):
             return True
 
+    else:
+        # 전체 시드가 미확정이어도 개별 확정 순위로
+        # 직접 진출이나 해당 라운드 미참가 여부를 판단할 수 있다.
+        rank = row.draw.ranks.get(team)
+
+        if rank is not None:
+            direct_rank = rule.seed_index + 1
+
+            if rank < direct_rank or rank > 5:
+                return False
+
+            if kind == "reach":
+                if rank == direct_rank:
+                    return True
+
+                if rule.is_wildcard and rank == 5:
+                    return True
+
     if kind == "reach" and rule.stage == "koreanSeries":
-        if row.draw.regular_first == team:
+        if regular_first_event(row.draw, team) is True:
             return True
 
     for stage in STAGES:
@@ -536,9 +581,7 @@ def summarize(
     for team in teams:
         team_results[str(team)] = {
             "regular_first": probability_summary([
-                None
-                if row.draw.regular_first is None
-                else row.draw.regular_first == team
+                regular_first_event(row.draw, team)
                 for row in rows
             ]),
             "rounds": {
