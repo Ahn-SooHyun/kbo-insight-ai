@@ -10,23 +10,24 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 | 적용 범위   | 기능·자료·설치·실행·문제 해결                                                                              |
 | 검토 기준일 | 2026-11-28 (KST)                                                                                           |
 | 저장소 경로 | `README.md`                                                                                                |
-| 소스 기준   | [`16398f8`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/16398f8c6ad0b68434757057991b922ad85bb653) |
+| 소스 기준   | [`c10459f`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/c10459f43f2aa7a5739d075502c1bdba1a200849) |
 
-[저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [예측·평가 계약](docs/standards/project_contract.md) · [정규시즌 전망](docs/standards/regular_season_standings.md)
+[저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [예측·평가 계약](docs/standards/project_contract.md) · [정규시즌 전망](docs/standards/regular_season_standings.md) · [포스트시즌 전망](docs/standards/postseason_forecast.md)
 
 > **현재 확인 범위 · 2026-11-28 (KST)**
-> 보완 자료와 정규시즌 M1·M2 개발 검증 및 병합을 확인했다. M4의 [PR #24](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/24) 병합과 [Issue #19](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/19) 종료를 확인했다. M5는 [PR #25](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/25) 병합(`f97fc73`) 및 [Issue #20](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/20) 종료 확인. M3는 [Issue #21](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/21) v1.1.0 구현·사용자 실자료 개발 평가·416개 회귀 및 독립 재현 4건과 [PR #26](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/26) 병합(`9d38fa2`) 및 Issue 종료를 확인했다. [Issue #27](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/27)의 정규시즌 전망은 원격 코드 v1.0.0·사용자 전용 39개/전체 455개 테스트·실제 자료 실행 5건·수정 전후 계산 일치를 확인했다. 정규시즌 하위 수용·PR·병합·Issue 종료, 포스트시즌 시리즈·한국시리즈 전망, 보조 기능 및 2026년 최종 Test는 아직 완료로 확인하지 않았다. 자료 이용은 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가 범위에 한정한다.
+> 보완 자료와 정규시즌 M1·M2 개발 검증 및 병합을 확인했다. M4의 [PR #24](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/24) 병합과 [Issue #19](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/19) 종료를 확인했다. M5는 [PR #25](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/25) 병합(`f97fc73`) 및 [Issue #20](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/20) 종료 확인. M3는 [Issue #21](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/21) v1.1.0 구현·사용자 실자료 개발 평가·416개 회귀 및 독립 재현 4건과 [PR #26](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/26) 병합(`9d38fa2`) 및 Issue 종료를 확인했다. [Issue #27](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/27)의 정규시즌 전망은 원격 코드 v1.0.0·사용자 전용 39개/전체 455개 테스트·실제 자료 실행 5건·수정 전후 계산 일치를 확인했다. 정규시즌 전망의 [PR #30](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/30) 병합(`24a103b`)과 Issue #27 종료를 확인했다. [Issue #28](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/28)의 포스트시즌 전망은 원격 `c10459f` 구현 및 사용자 전용 74개·전체 529개 테스트, 실제 자료 실행 7건, 부모 반복 인수·확정 상태·확률 및 재현성 검산을 확인했다. 2025년 가정 시나리오 범위의 기술 검증과 하위 기술 수용을 완료했다. 문서 반영·종료 Commit·PR·병합·Issue 종료는 대기 중이다. 공식 포스트시즌 자료 정확성, 당시 정보 기반 성능 평가, 보조 기능 및 2026년 최종 Test는 미완료 또는 미지원이다. 자료 이용은 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가 범위에 한정한다.
 
-| 기능/자료                                                   | 현재 확인 범위                                                                                                                                                                                                                                                      | 다음 확인 사항                                                 |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 자료 구축 및 보완                                           | 원본 46개 / 논리 대상 48개 / 판본 50개, 보완 표준·모델 자료 재현 인수                                                                                                                                                                                               | 새 자료·원본 판본 변경 시 재검증                               |
-| [M1 경기 결과·득점](docs/standards/game_outcome_score.md)   | Issue #17 병합; 정규시즌 개발 평가 및 시즌별 백테스트                                                                                                                                                                                                               | 최종 Test·포스트시즌 일반화                                    |
-| [M2 타석 결과](docs/standards/plate_appearance.md)          | Issue #18 종료, [PR #23](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/23) 병합(`307c729`); 개발 평가·로컬 회귀 검증                                                                                                                                           | 최종 Test·전이 연결                                            |
-| [M4 경기 상황 가치](docs/standards/game_state_value.md)     | v1.1.0, `logistic_core` 1개; 97개 M4/286개 전체 테스트 통과; PR #24 병합·Issue #19 종료                                                                                                                                                                             | 최종 Test·후속 상태 연결                                       |
-| [M5 다음 투구](docs/standards/pitch_outcome.md)             | v1.1.0; `logistic_temperature` 1개(T=1.15); 62개 M5/348개 전체 테스트 및 실데이터·독립 재현 통과; [PR #25](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/25) 병합(`f97fc73`) 및 [Issue #20](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/20) 종료 확인 | 최종 Test·원본 평가 JSON 직접 검토                             |
-| [M3 선수 미래 성적](docs/standards/player_performance.md)   | v1.1.0; 타자 `history_balanced_50`, 투수 `joint_residual_tree_depth_4_shrink_50`; 역할별 후보 11개 비교, M3 68개/전체 416개, 독립 재현 4건 성공; PR #26 병합 `9d38fa2`, Issue #21 종료                                                                              | 평가 JSON 원문 검토·최종 Test                                  |
-| [정규시즌 전망](docs/standards/regular_season_standings.md) | v1.0.0; `16398f8` 원격 코드, 사용자 전용 39개·전체 455개 테스트, 실제 자료 5건 및 이전 계산과 완전 일치; 2025년 개발 시나리오                                                                                                                                       | 하위 수용·PR·병합·Issue 종료, 당시 정보 기반 평가 및 최종 Test |
-| 포스트시즌 전망·보조 기능·설명                              | 설계 계약; [Issue #28](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/28) 등록; 시리즈 실행 및 성능 증거 미확인                                                                                                                                               | 동일 반복 시드 인수·시리즈 규칙·후속 검증                      |
+| 기능/자료                                                   | 현재 확인 범위                                                                                                                                                                                                                                                      | 다음 확인 사항                                                                                         |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 자료 구축 및 보완                                           | 원본 46개 / 논리 대상 48개 / 판본 50개, 보완 표준·모델 자료 재현 인수                                                                                                                                                                                               | 새 자료·원본 판본 변경 시 재검증                                                                       |
+| [M1 경기 결과·득점](docs/standards/game_outcome_score.md)   | Issue #17 병합; 정규시즌 개발 평가 및 시즌별 백테스트                                                                                                                                                                                                               | 최종 Test·포스트시즌 일반화                                                                            |
+| [M2 타석 결과](docs/standards/plate_appearance.md)          | Issue #18 종료, [PR #23](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/23) 병합(`307c729`); 개발 평가·로컬 회귀 검증                                                                                                                                           | 최종 Test·전이 연결                                                                                    |
+| [M4 경기 상황 가치](docs/standards/game_state_value.md)     | v1.1.0, `logistic_core` 1개; 97개 M4/286개 전체 테스트 통과; PR #24 병합·Issue #19 종료                                                                                                                                                                             | 최종 Test·후속 상태 연결                                                                               |
+| [M5 다음 투구](docs/standards/pitch_outcome.md)             | v1.1.0; `logistic_temperature` 1개(T=1.15); 62개 M5/348개 전체 테스트 및 실데이터·독립 재현 통과; [PR #25](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/25) 병합(`f97fc73`) 및 [Issue #20](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/20) 종료 확인 | 최종 Test·원본 평가 JSON 직접 검토                                                                     |
+| [M3 선수 미래 성적](docs/standards/player_performance.md)   | v1.1.0; 타자 `history_balanced_50`, 투수 `joint_residual_tree_depth_4_shrink_50`; 역할별 후보 11개 비교, M3 68개/전체 416개, 독립 재현 4건 성공; PR #26 병합 `9d38fa2`, Issue #21 종료                                                                              | 평가 JSON 원문 검토·최종 Test                                                                          |
+| [정규시즌 전망](docs/standards/regular_season_standings.md) | v1.0.0; `16398f8` 원격 구현, 사용자 전용 39개·전체 455개 테스트, 실제 자료 5건 및 이전 계산과 완전 일치; [PR #30](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/30) 병합(`24a103b`), Issue #27 종료                                                            | 당시 정보 기반 평가 및 최종 Test                                                                       |
+| [포스트시즌 전망](docs/standards/postseason_forecast.md)    | v1.0.0; `c10459f` 원격 구현, 사용자 전용 74개·전체 529개 테스트, 실자료 7건, 부모 1,000회(906개 확정·94개 미결정 시드) 인수; [Issue #28](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/28) 기술 검증 및 하위 기술 수용 완료                                  | 문서 반영·종료 Commit·PR·병합·Issue 종료, 원천 자료 정정, 다른 시즌 규칙·당시 정보 기반 평가·최종 Test |
+| 보조 기능·설명                                              | 설계 계약                                                                                                                                                                                                                                                           | 개별 지원 조건·실제 계산·평가 및 재현 검증                                                             |
 
 공통 예측·평가 계약의 규범은 유지하고 6.10절의 모델·계산 상태 표와 최신 병합 및 개발 검증 상태를 위 표 및 각 실행 문서와 동기화한다. 직접 원격 검토, 사용자 전달 실행 로그, 산출물 원본 독립 검토, 수용·병합은 별개의 증거다.
 
@@ -42,6 +43,7 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 | 투구 학습·검증      | [다음 투구 개발 결과](#pitch-outcome-status) → [실행·재현 계약](docs/standards/pitch_outcome.md#commands)                            |
 | 선수 학습·검증      | [선수 미래 성적 개발 결과](#player-performance-status) → [실행·재현 계약](docs/standards/player_performance.md#commands)             |
 | 정규시즌 전망       | [개발 결과와 실행](#regular-season-status) → [수학·강의·평가·재현 계약](docs/standards/regular_season_standings.md)                  |
+| 포스트시즌 전망     | [개발 결과와 실행](#postseason-status) → [시리즈 규칙·조건부 확률·재현 계약](docs/standards/postseason_forecast.md)                  |
 
 <a id="features"></a>
 
@@ -59,16 +61,16 @@ KBO 공개 자료를 자동 확보해 경기·타석·선수·상황·투구를 
 | [M4 상황](docs/standards/project_contract.md#m4) | 같은 공격팀의 승리 확률·반이닝 잔여 기대득점·WPA·득점 가치·상황 중요도 | 타석 직전·종료 직후                |
 | [M5 투구](docs/standards/project_contract.md#m5) | 다음 실제 공의 구종·결과 공동 확률, 구종 및 결과 주변 확률             | 해당 공 투구 전                    |
 
-M1~M5는 기능군이며, **최종 주 예측기 6개**(M1·M2·M4·M5 각 1개, M3 타자·투수 각 1개)를 기본 구성으로 확정했다. M5 위치는 제외한다. 정규시즌 전망은 저장 M1을 재사용하며 독립 신규 예측기 0개다. 독립 모델의 실제 집계와 미검증 가정은 [모델 수 계약](docs/standards/project_contract.md#model-count)을 따른다.
+M1~M5는 기능군이며, **최종 주 예측기 6개**(M1·M2·M4·M5 각 1개, M3 타자·투수 각 1개)를 기본 구성으로 확정했다. M5 위치는 제외한다. 정규시즌·포스트시즌 전망은 저장 M1을 재사용하며 독립 신규 예측기 0개다. 독립 모델의 실제 집계와 미검증 가정은 [모델 수 계약](docs/standards/project_contract.md#model-count)을 따른다.
 
 ### 시즌 전망과 보조 기능
 
 - **정규시즌:** 최종 승수·순위별 확률, 정규시즌 1위, 포스트시즌 진출, 동일 반복의 확정 시드. 현재 v1.0.0은 2025년 개발 시나리오를 지원한다.
-- **포스트시즌:** 시리즈별 결과, 한국시리즈 진출·우승은 별도 후속 구현이다.
+- **포스트시즌:** 2025년 시리즈별 참가·승리, 한국시리즈 진출·우승 및 대진 조건부 확률을 제공한다. 정규시즌 동일 반복의 확정 시드를 인수하거나 정규시즌 종료 후 원천 판본 가정 모드로 완료 경기와 잔여 차전을 처리한다. 공식 기록 및 과거 시점 평가가 검증된 결과는 아니다.
 - **라인업·선수 운용:** 예상 선발 출장·1~9번 타순·수비 위치·선발투수, 등록 선수·벤치·불펜, 투수 교체·다음 후보
 - **팀·상대 분석:** 전력·최근 경기력·일정 난이도·타자/투수 상대 분석, 불확실성·예측 설명
 
-**정규시즌 우승은 최종 1위**, **한국시리즈 우승은 포스트시즌을 거친 최종 우승**이다. 서로 다른 출력·정답으로 다룬다. [시즌 계약](docs/standards/project_contract.md#season)에 규칙·일정 가정·평가를 정의한다. 실제 정규시즌 계산에서 팀별 유효 분모와 리그 공동 분모를 분리하며 결정전 또는 미편성으로 미확정인 값을 0으로 치환하지 않는다. 후속 시리즈는 팀별 주변 확률이 아니라 동일 반복의 확정 시드를 인수한다.
+**정규시즌 우승은 최종 1위**, **한국시리즈 우승은 포스트시즌을 거친 최종 우승**이다. 서로 다른 출력·정답으로 다룬다. [시즌 계약](docs/standards/project_contract.md#season)에 규칙·일정 가정·평가를 정의한다. 실제 정규시즌 계산에서 팀별 유효 분모와 리그 공동 분모를 분리하며 결정전 또는 미편성으로 미확정인 값을 0으로 치환하지 않는다. 포스트시즌 시리즈는 팀별 주변 확률이 아니라 동일 반복의 확정 시드를 인수하며, 전체 시드 미결정인 반복에서도 개별 구단의 확정 순위·진출·1위 상태를 보존한다.
 
 보조 기능은 규칙·통계·기존 예측을 우선 재사용한다. 대타·대주자·수비 교체, 도루·도루실패·견제사, 관측 번트는 세부 항목별 자동 식별·전체 품질 확인 후 포함/제한/제외한다. [조건부 판정](docs/standards/project_contract.md#conditional)을 확인한다.
 
@@ -82,7 +84,7 @@ M1~M5는 기능군이며, **최종 주 예측기 6개**(M1·M2·M4·M5 각 1개,
 
 ### 현재 소스 구조
 
-아래는 검토한 제출 브랜치의 실제 Git 추적 경로에 이번 문서 개정의 `regular_season_standings.md`를 추가한 소스 지도다. 신규 문서의 실제 원격 반영은 별도 확인한다. 미래 기능의 예정 폴더, 로컬 생성 데이터·자산·가상환경은 실제 추적 파일로 표시하지 않는다.
+아래는 확인한 원격 `feat/28` 브랜치의 실제 Git 추적 경로를 기준으로 한 소스 지도다. 미래 기능의 예정 폴더, 로컬 생성 데이터·자산·가상환경은 실제 추적 파일로 표시하지 않는다.
 
 ```text
 kbo-insight-ai/
@@ -150,7 +152,13 @@ kbo-insight-ai/
 │   │       └── model.py
 │   ├── simulation/
 │   │   ├── __init__.py
-│   │   └── regular_season/
+│   │   ├── regular_season/
+│   │   │   ├── __init__.py
+│   │   │   ├── __main__.py
+│   │   │   ├── data.py
+│   │   │   ├── engine.py
+│   │   │   └── rules.py
+│   │   └── postseason/
 │   │       ├── __init__.py
 │   │       ├── __main__.py
 │   │       ├── data.py
@@ -185,7 +193,10 @@ kbo-insight-ai/
 │   ├── simulation/
 │   │   ├── __init__.py
 │   │   ├── test_regular_season.py
-│   │   └── test_regular_season_cli.py
+│   │   ├── test_regular_season_cli.py
+│   │   ├── test_postseason.py
+│   │   ├── test_postseason_cli.py
+│   │   └── test_postseason_parent_contract.py
 │   └── validation/
 │       ├── __init__.py
 │       ├── test_inspection.py
@@ -203,7 +214,8 @@ kbo-insight-ai/
         ├── pitch_outcome.md
         ├── player_performance.md
         ├── project_contract.md
-        └── regular_season_standings.md
+        ├── regular_season_standings.md
+        └── postseason_forecast.md
 ```
 
 | 위치                                                  | 책임                                                                               |
@@ -259,6 +271,14 @@ kbo-insight-ai/
 | `src/simulation/regular_season/__main__.py`           | 실행 CLI·산출물 저장·매니페스트·실행 실패 처리                                     |
 | `tests/simulation/test_regular_season.py`             | 가상 시즌 규칙·입력 경계·분포·재현·미확정 검사                                     |
 | `tests/simulation/test_regular_season_cli.py`         | 일반/진단 실행·출력 계약·파일 해시·잘못된 반복 및 입력 누락 검증                   |
+| `src/simulation/postseason/__init__.py`               | 포스트시즌 버전·스키마·지원 시즌·기본 상수                                         |
+| `src/simulation/postseason/data.py`                   | 부모 실행·표준 및 모델 자료 계보·일정·완료 근거 검증                               |
+| `src/simulation/postseason/rules.py`                  | 시드 대진·홈 배정·어드밴티지·무승부 및 종료 규칙                                   |
+| `src/simulation/postseason/engine.py`                 | M1 경기 결과 확률 표본 추출·시리즈 연결·공동 및 조건부 확률 집계                   |
+| `src/simulation/postseason/__main__.py`               | 실행 CLI·신규 결과 및 매니페스트 저장·실패 처리                                    |
+| `tests/simulation/test_postseason.py`                 | 시리즈 규칙·확률·모의 대진 및 재현성 검증                                          |
+| `tests/simulation/test_postseason_cli.py`             | 부모 실행·자료 근거·시점·CLI 출력 검증                                             |
+| `tests/simulation/test_postseason_parent_contract.py` | 공동 순위·개별 확정 상태·완료 근거·라운드 날짜 회귀 검증                           |
 | `src/datasets/model_data.py`                          | 모델 자료 생성·인수·논리 해시                                                      |
 | `src/datasets/model_events.py`                        | 타석·상황·투구 입력/정답 구축                                                      |
 | `src/datasets/model_players.py`                       | 선수 이력·정답 창 구성                                                             |
@@ -288,18 +308,19 @@ kbo-insight-ai/
 
 `pyproject.toml`·`.python-version`·`.gitignore`는 프로젝트 단위 파일이며, `kbo.toml`도 현재 설정 로더가 프로젝트 기준 위치에서 읽는다. 이를 별도 설정 폴더로 옮기려면 로더와 테스트·안내도 함께 변경해야 한다.
 
-경기 결과·득점 예측의 모델과 실행 진입점은 `src/models/game_outcome/`에 둔다. 기준 모델과의 비교·확률 지표는 `src/evaluation/`에서 계산한다. 타석 결과 예측의 운영 확률 계약과 실행 진입점은 `src/models/plate_appearance/`에 둔다. 경기 상황 가치의 상태·계산·운영 예측기는 `src/models/game_state_value/`에 둔다. 다음 투구 공동 예측 및 보정은 `src/models/pitch_outcome/`에 둔다. 선수 미래 성적 공동 예측 및 평가는 `src/models/player_performance/`에 둔다. 정규시즌의 자료·규칙·반복 계산·CLI는 `src/simulation/regular_season/`에 두고 기존 M1을 변경하지 않는다. 아직 구현 근거가 없는 기능은 [개발 흐름](docs/planning/development_workflow.md#mapping)의 예정 경로를 참조한다.
+경기 결과·득점 예측의 모델과 실행 진입점은 `src/models/game_outcome/`에 둔다. 기준 모델과의 비교·확률 지표는 `src/evaluation/`에서 계산한다. 타석 결과 예측의 운영 확률 계약과 실행 진입점은 `src/models/plate_appearance/`에 둔다. 경기 상황 가치의 상태·계산·운영 예측기는 `src/models/game_state_value/`에 둔다. 다음 투구 공동 예측 및 보정은 `src/models/pitch_outcome/`에 둔다. 선수 미래 성적 공동 예측 및 평가는 `src/models/player_performance/`에 둔다. 정규시즌의 자료·규칙·반복 계산·CLI는 `src/simulation/regular_season/`에 두고 기존 M1을 변경하지 않는다. 아직 구현 근거가 없는 기능은 [개발 흐름](docs/planning/development_workflow.md#mapping)의 예정 경로를 참조한다. 포스트시즌 자료 인수·규칙·반복 계산·CLI는 `src/simulation/postseason/`에 두며 기존 정규시즌 전망과 M1 자산을 수정하지 않고 사용한다.
 
 ### 문서의 역할
 
-| 문서                                                                         | 역할                                                     |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------- |
-| README                                                                       | 프로젝트 소개·폴더 구조·설치·설정·기본 확인·결과 안내    |
-| [개발 흐름](docs/planning/development_workflow.md)                           | 작업의 선행 관계·입력·산출물·완료 증거·인수              |
-| [예측·평가 계약](docs/standards/project_contract.md)                         | 기능·정보 시점·정답·평가·미확정·재현성의 상세 원문       |
-| [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md) | 실제 입력·규칙·수학적 원리·강의·실측·실행·후속 시드 인계 |
+| 문서                                                                                             | 역할                                                       |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| README                                                                                           | 프로젝트 소개·폴더 구조·설치·설정·기본 확인·결과 안내      |
+| [개발 흐름](docs/planning/development_workflow.md)                                               | 작업의 선행 관계·입력·산출물·완료 증거·인수                |
+| [예측·평가 계약](docs/standards/project_contract.md)                                             | 기능·정보 시점·정답·평가·미확정·재현성의 상세 원문         |
+| [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md)                     | 실제 입력·규칙·수학적 원리·강의·실측·실행·후속 시드 인계   |
+| [포스트시즌 시리즈·한국시리즈 우승 전망 실행과 결과 계약](docs/standards/postseason_forecast.md) | 시리즈 규칙·원천 자료 제한·부모 인수·조건부 확률·검증·실행 |
 
-[경기 결과·득점 예측 실행과 결과 계약](docs/standards/game_outcome_score.md), [타석 결과 예측 실행과 결과 계약](docs/standards/plate_appearance.md), [경기 상황 가치 평가 실행과 결과 계약](docs/standards/game_state_value.md), [다음 투구 구종·결과 예측 실행과 결과 계약](docs/standards/pitch_outcome.md), [선수 미래 성적 예측 실행과 결과 계약](docs/standards/player_performance.md), [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md)은 동일한 10절 구조로 입력·정답·학습 또는 계산·강의 원리·평가·재현·실행을 설명한다. 모델별 실제 수치와 세부 방법은 해당 실행 문서를 원문으로 유지한다. 모델별 비교 후보와 운영 모델을 분리하며 M4의 RE·전이 통계와 M5의 온도 변환·주변 확률, 정규시즌의 반복 계산·기준 계산은 별도 독립 주 예측기로 세지 않는다.
+[경기 결과·득점 예측 실행과 결과 계약](docs/standards/game_outcome_score.md), [타석 결과 예측 실행과 결과 계약](docs/standards/plate_appearance.md), [경기 상황 가치 평가 실행과 결과 계약](docs/standards/game_state_value.md), [다음 투구 구종·결과 예측 실행과 결과 계약](docs/standards/pitch_outcome.md), [선수 미래 성적 예측 실행과 결과 계약](docs/standards/player_performance.md), [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md), [포스트시즌 전망 실행과 결과 계약](docs/standards/postseason_forecast.md)은 동일한 10절 구조로 입력·정답·학습 또는 계산·강의 원리·평가·재현·실행을 설명한다. 모델별 실제 수치와 세부 방법은 해당 실행 문서를 원문으로 유지한다. 모델별 비교 후보와 운영 모델을 분리하며 M4의 RE·전이 통계와 M5의 온도 변환·주변 확률, 정규시즌의 반복 계산·기준 계산 및 포스트시즌의 시리즈 반복 계산은 별도 독립 주 예측기로 세지 않는다.
 
 데이터 담당은 [M3 정답](docs/standards/project_contract.md#m3-labels)과 [확정 대기](docs/standards/project_contract.md#decisions), 모델 담당은 [평가](docs/standards/project_contract.md#evaluation), 검토 담당은 [계약 검증표](docs/standards/project_contract.md#checks)와 [인수 체크](docs/planning/development_workflow.md#handover)를 함께 읽는다.
 
@@ -396,7 +417,7 @@ Windows AMD64의 Python 3.12.15와 uv 0.13.7에서 편집 가능 설치, 설치�
 | `results/`        | 예측·평가·보고 결과 및 시뮬레이션                                       |
 | `.cache/`         | 재생성 가능한 임시 자산. 유일한 원본·재현 근거로 사용 금지              |
 
-`models/`는 모델 소스 코드가 아닌 저장 자산의 위치다. 실행 소스는 `src/` 아래에 둔다. 정규시즌 전망은 `results/regular_season/{run_id}/`에 신규 결과를 생성하고 완료 매니페스트를 마지막에 기록한다.
+`models/`는 모델 소스 코드가 아닌 저장 자산의 위치다. 실행 소스는 `src/` 아래에 둔다. 정규시즌 전망은 `results/regular_season/{run_id}/`에 신규 결과를 생성하고 완료 매니페스트를 마지막에 기록한다. 포스트시즌 전망도 `results/postseason/{run_id}/`에 신규 결과를 기록하고 기존 실행·모델 자산을 덮어쓰지 않는다.
 
 원본 보존·부모 자료·버전·실행 식별자와 이력의 의미는 [계약 10절](docs/standards/project_contract.md#reproducibility)을 따른다. 설정 확인은 경로 해석·검증만 수행한다. 명시적인 수집 명령은 원본과 시도 이력을 생성한다. 공개 배포 파일 전체 수집은 3.9절을 참조하고, 표준화·변환·학습 이력은 뒤의 관련 절과 각 모델 실행 문서에서 확인한다.
 
@@ -686,7 +707,7 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 
 이전 모델과 보완 모델의 비교는 `starter_pre_game`의 기존 행을 보존하며, 신규 포스트시즌 경기의 실제 참가 팀과 기준일 이전 선발 기록에서만 추가 행을 허용한다. 행의 중복·삭제·변경 또는 미래 시점 혼입은 실패로 처리한다.
 
-포스트시즌 원본 및 완료 근거 테스트 18개와 원본 범위·CLI·선발 후보 추가 검증 테스트 20개는 `tests/validation/test_postseason_supplement.py`에 함께 유지한다. 이 보완판 인수 당시 기존 94개를 포함해 전체 회귀 테스트 132개가 통과했다. 이후 M1까지 143개, M2까지 189개, M4 보완판까지 286개(그중 M4 97개), M5 보완판까지 348개(그중 M5 62개), M3 보완판까지 416개(그중 M3 68개)가 사용자 로컬 환경에서 통과했다. 정규시즌 전망 추가 후 전용 39개와 전체 455개가 통과했다. 개수는 실행 당시의 상태다.
+포스트시즌 원본 및 완료 근거 테스트 18개와 원본 범위·CLI·선발 후보 추가 검증 테스트 20개는 `tests/validation/test_postseason_supplement.py`에 함께 유지한다. 이 보완판 인수 당시 기존 94개를 포함해 전체 회귀 테스트 132개가 통과했다. 이후 M1까지 143개, M2까지 189개, M4 보완판까지 286개(그중 M4 97개), M5 보완판까지 348개(그중 M5 62개), M3 보완판까지 416개(그중 M3 68개)가 사용자 로컬 환경에서 통과했다. 정규시즌 전망 추가 후 전용 39개와 전체 455개가 통과했다. 포스트시즌 전망 보완 후 전용 74개와 전체 529개가 통과했다. 개수는 실행 당시의 상태다.
 
 실행 결과에 표시된 새 standard run/verification과 model run을 사용한다. `quality.json`, 최종 검증 JSON의 `handoff`, 모델 `manifest.json` 및 첫 모델 실행 폴더의 `supplement-impact.json`에서 이전/새 자료의 변경 테이블·표본 수·기간별 유효 Count·분모·관측 제한을 확인한다. 고정 시간 분할은 유지하며 최종 Test는 무결성/분할 검사만 수행한다. 2023~2025년 잔여 정답과 2025년 28일 정답은 실제 생성 결과에서만 확정한다. 기존 모델 예측기 수·학습 범위·시뮬레이션의 후속 작업은 변경하지 않는다.
 
@@ -705,14 +726,15 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 
 모델 자료의 인수 기준은 보완판이다. 기존 절의 이전 실행 ID는 역사적 자료를 재생성하거나 판본을 비교하기 위한 것이다. 새 모델 개발에 이전 자료를 무심코 전달하지 않는다.
 
-| 실행 대상                           | 실제 명령 모듈                                                             | 문서                                                             |
-| ----------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 경기 결과·득점                      | `src.models.game_outcome` / `src.models.game_outcome.backtest`             | [실행·재현](docs/standards/game_outcome_score.md#commands)       |
-| 타석 결과                           | `src.models.plate_appearance` (`train`, `predict`, `verify`)               | [실행·재현](docs/standards/plate_appearance.md#commands)         |
-| 경기 상황 가치                      | `src.models.game_state_value` (`train`, `predict`, `verify`)               | [실행·재현](docs/standards/game_state_value.md#commands)         |
-| 다음 투구 구종·결과                 | `src.models.pitch_outcome` (`train`, `predict`, `verify`, `compare`)       | [실행·재현](docs/standards/pitch_outcome.md#commands)            |
-| 선수 미래 성적                      | `src.models.player_performance` (`train`, `predict`, `inspect`, `compare`) | [실행·재현](docs/standards/player_performance.md#commands)       |
-| 정규시즌 최종 순위·1위 및 진출 전망 | `src.simulation.regular_season` (`simulate`)                               | [실행·재현](docs/standards/regular_season_standings.md#commands) |
+| 실행 대상                              | 실제 명령 모듈                                                             | 문서                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 경기 결과·득점                         | `src.models.game_outcome` / `src.models.game_outcome.backtest`             | [실행·재현](docs/standards/game_outcome_score.md#commands)       |
+| 타석 결과                              | `src.models.plate_appearance` (`train`, `predict`, `verify`)               | [실행·재현](docs/standards/plate_appearance.md#commands)         |
+| 경기 상황 가치                         | `src.models.game_state_value` (`train`, `predict`, `verify`)               | [실행·재현](docs/standards/game_state_value.md#commands)         |
+| 다음 투구 구종·결과                    | `src.models.pitch_outcome` (`train`, `predict`, `verify`, `compare`)       | [실행·재현](docs/standards/pitch_outcome.md#commands)            |
+| 선수 미래 성적                         | `src.models.player_performance` (`train`, `predict`, `inspect`, `compare`) | [실행·재현](docs/standards/player_performance.md#commands)       |
+| 정규시즌 최종 순위·1위 및 진출 전망    | `src.simulation.regular_season` (`simulate`)                               | [실행·재현](docs/standards/regular_season_standings.md#commands) |
+| 포스트시즌 시리즈·한국시리즈 우승 전망 | `src.simulation.postseason` (`simulate`)                                   | [실행·재현](docs/standards/postseason_forecast.md#commands)      |
 
 모델별 문서의 실제 인수 실행 ID 및 저장 모델 경로를 사용한다. 최종 Test 및 미구현 기능의 CLI를 임의로 가정하지 않는다.
 
@@ -776,22 +798,22 @@ M3은 선수의 과거 관측 모집단·역할·마지막 관측 팀을 기준�
 
 ### 정규시즌 최종 순위·1위 및 진출 전망의 현재 개발 결과
 
-| 항목                  | 확인된 결과                                                                                                                                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 소스·버전             | [`16398f8`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/16398f8c6ad0b68434757057991b922ad85bb653), `1.0.0`, `kbo-2025-ranking-v1`                                                                                               |
-| 입력 자료             | 위 인수 표준 검증판 및 모델 자료, 저장 M1 `0d9433b8044e48e5a4d21bbdb9b432e5`                                                                                                                                                             |
-| 운영 방식             | 기존 M1의 결합 득점 분포·승률·순위 규칙 및 날짜순 상태 갱신; 별도 주 예측기 0개, 전체 6개 유지                                                                                                                                           |
-| 개발 기준             | 2025-09-01 KST, 완료 622경기, 잔여 98경기, 미충족 0경기; 사후 일정 가정                                                                                                                                                                  |
-| 대표 실행             | `e24254420aee4d52acf2b1fb144c3d58`, 1,000회, Seed 42, 개발 진단 포함                                                                                                                                                                     |
-| 팀별 확률             | 팀·사건별 유효 반복만 분모로 사용, 0·미확정(null) 분리                                                                                                                                                                                   |
-| 리그 공동 분모        | 1위 공동 확정 984/1,000; 진출 공동 확정 922/1,000; 전체 순위 및 포스트시즌 시드 확정 906/1,000                                                                                                                                           |
-| 기준 → 운영 개발 MAE  | 승수 2.3239 → 2.1334; 순위 0.86945560 → 0.74354578                                                                                                                                                                                       |
-| 기준 → 운영 1위 점수  | Brier 0.00024123 → 0.00023878; binary Log loss 0.00706934 → 0.00703278                                                                                                                                                                   |
-| 기준 → 운영 진출 점수 | Brier 0.16011838 → 0.13195694; binary Log loss 0.43373224 → 0.37060712                                                                                                                                                                   |
-| 반복 안정성           | 동일 Seed·반복 수의 결과 및 파일 해시 일치, 2,000회 중 처음 1,000회 일치; Seed 변경 변동 확인                                                                                                                                            |
-| 종료 시즌             | 2025-10-05 KST, 완료 720·잔여 0; M1 미호출, 실제 확정 성적 유지                                                                                                                                                                          |
-| 검증                  | CLI 4개·정규시즌 전용 39개·전체 455개, 실자료 5건, 기존 결과 비교 및 변경 형식 검사 exit 0                                                                                                                                               |
-| 인수 제한             | [Issue #27](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/27) 구현 및 로컬 기술 검증 근거 확인; 하위 수용·PR·병합 미확인. 원본 JSON/DB 직접 검산, 실제 당시 일정 근거, 독립 Backtesting, 2026 최종 Test 및 포스트시즌 계산은 별도 |
+| 항목                  | 확인된 결과                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 소스·버전             | [`16398f8`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/16398f8c6ad0b68434757057991b922ad85bb653), `1.0.0`, `kbo-2025-ranking-v1`                                                                                                                                                                                                                         |
+| 입력 자료             | 위 인수 표준 검증판 및 모델 자료, 저장 M1 `0d9433b8044e48e5a4d21bbdb9b432e5`                                                                                                                                                                                                                                                                                       |
+| 운영 방식             | 기존 M1의 결합 득점 분포·승률·순위 규칙 및 날짜순 상태 갱신; 별도 주 예측기 0개, 전체 6개 유지                                                                                                                                                                                                                                                                     |
+| 개발 기준             | 2025-09-01 KST, 완료 622경기, 잔여 98경기, 미충족 0경기; 사후 일정 가정                                                                                                                                                                                                                                                                                            |
+| 대표 실행             | `e24254420aee4d52acf2b1fb144c3d58`, 1,000회, Seed 42, 개발 진단 포함                                                                                                                                                                                                                                                                                               |
+| 팀별 확률             | 팀·사건별 유효 반복만 분모로 사용, 0·미확정(null) 분리                                                                                                                                                                                                                                                                                                             |
+| 리그 공동 분모        | 1위 공동 확정 984/1,000; 진출 공동 확정 922/1,000; 전체 순위 및 포스트시즌 시드 확정 906/1,000                                                                                                                                                                                                                                                                     |
+| 기준 → 운영 개발 MAE  | 승수 2.3239 → 2.1334; 순위 0.86945560 → 0.74354578                                                                                                                                                                                                                                                                                                                 |
+| 기준 → 운영 1위 점수  | Brier 0.00024123 → 0.00023878; binary Log loss 0.00706934 → 0.00703278                                                                                                                                                                                                                                                                                             |
+| 기준 → 운영 진출 점수 | Brier 0.16011838 → 0.13195694; binary Log loss 0.43373224 → 0.37060712                                                                                                                                                                                                                                                                                             |
+| 반복 안정성           | 동일 Seed·반복 수의 결과 및 파일 해시 일치, 2,000회 중 처음 1,000회 일치; Seed 변경 변동 확인                                                                                                                                                                                                                                                                      |
+| 종료 시즌             | 2025-10-05 KST, 완료 720·잔여 0; M1 미호출, 실제 확정 성적 유지                                                                                                                                                                                                                                                                                                    |
+| 검증                  | CLI 4개·정규시즌 전용 39개·전체 455개, 실자료 5건, 기존 결과 비교 및 변경 형식 검사 exit 0                                                                                                                                                                                                                                                                         |
+| 인수 제한             | [Issue #27](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/27) 기술 검증 및 [PR #30](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/30) 병합(`24a103b`)·Issue 종료 확인. 원본 JSON/DB 직접 검산, 실제 당시 일정 근거, 독립 Backtesting 및 2026 최종 Test는 별도 제한. 포스트시즌 계산은 별도 [실행 계약](docs/standards/postseason_forecast.md)에서 관리 |
 
 대표 실행에서 LG의 정규시즌 1위 확률은 유효 반복 기준 96.5447%, 한화는 3.4553%이다. 해당 수치는 모델·입력 일정 가정·시즌 규칙·유효 분모에 조건화된 Monte Carlo 추정이다. 결정전이나 불완전 일정의 미확정 반복을 특정 팀의 실패로 간주하지 않는다. 팀별 확률의 분모가 다를 수 있으므로 리그 전체 확률 합을 확인할 때는 `league`의 공동 분모를 사용한다. 이 결과는 당시 공개 일정 및 모델 이용 가능성의 독립 검증을 통과한 Backtesting이 아니다. 2025년 개발 시나리오 한 건의 6개 비교 지표는 감소했지만 다른 시즌에서의 우월성을 입증하지 않는다.
 
@@ -804,7 +826,36 @@ $asset = Join-Path $root 'models/m1/0d9433b8044e48e5a4d21bbdb9b432e5/model.json'
 if ($LASTEXITCODE -ne 0) { throw '정규시즌 전망 실행 실패' }
 ```
 
-새 실행은 `results/regular_season/<실행 ID>/`에 저장한다. stdout의 `iterations`는 정수 반복 수, `iterations_path`는 반복별 파일 경로다. `manifest.json`의 `files.iterations.path`는 기존 경로 계약을 유지한다. `scenario.json`의 입력 경계와 일정 가정, `summary.json`의 팀별·공동 분모, `iterations.jsonl`의 같은 반복에 속하는 전체 팀 상태 및 포스트시즌 시드를 함께 읽는다. `--diagnostic`의 사후 비교는 운영 예측 입력이나 모델 선택에 반영하지 않는다. 자세한 데이터·수학·강의 연계·코드·실측·오류 검증은 [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md)을 따른다. 한국시리즈 우승 확률은 이 작업의 결과가 아니다. 후속 [Issue #28](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/28)은 동일 반복의 확정 시드 및 미확정 상태를 인수해야 한다.
+새 실행은 `results/regular_season/<실행 ID>/`에 저장한다. stdout의 `iterations`는 정수 반복 수, `iterations_path`는 반복별 파일 경로다. `manifest.json`의 `files.iterations.path`는 기존 경로 계약을 유지한다. `scenario.json`의 입력 경계와 일정 가정, `summary.json`의 팀별·공동 분모, `iterations.jsonl`의 같은 반복에 속하는 전체 팀 상태 및 포스트시즌 시드를 함께 읽는다. `--diagnostic`의 사후 비교는 운영 예측 입력이나 모델 선택에 반영하지 않는다. 자세한 데이터·수학·강의 연계·코드·실측·오류 검증은 [정규시즌 전망 실행과 결과 계약](docs/standards/regular_season_standings.md)을 따른다. 한국시리즈 우승 확률은 이 작업의 결과가 아니다. [Issue #28](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/28)의 포스트시즌 전망은 동일 반복의 확정 시드와 미확정 상태를 인수하며 별도 결과를 저장한다.
+
+<a id="postseason-status"></a>
+
+### 포스트시즌 시리즈·한국시리즈 우승 전망의 현재 개발 결과
+
+| 항목        | 확인된 결과                                                                                                                                                                             |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 구현        | `c10459f`, v1.0.0, `kbo-2025-postseason-v1`; 2025년 규칙만 지원                                                                                                                         |
+| 선행 자료   | 정규시즌 대표 실행 `e24254420aee4d52acf2b1fb144c3d58`; 모델 자료 `259b38decaac4ed68dd5a596cfbe4849`; 저장 M1 `0d9433b8044e48e5a4d21bbdb9b432e5`                                         |
+| 부모 연동   | 2025-09-01 KST, 1,000회, 하위 공동 순위 포함 128회, 시드 906회 확정·94회 미결정 그대로 인수                                                                                             |
+| 대표 실행   | `8cd2a67f518047c8a77f765134345b21`, Seed 42, 한국시리즈 대진 성립 902회·우승 결정 899회·미결정 101회                                                                                    |
+| 출력        | 라운드별 참가·승리, 정규시즌 1위, KS 진출·우승, 대진 조건부 확률, 사건별 및 공동 유효 분모, 미결정 이유                                                                                 |
+| 안정성      | 동일 Seed 핵심 결과 해시 일치, Seed 43 결과 변동 확인, 1,000/2,000회 공통 1,000회 일치, 최대 공동 우승 확률 차이 2.0117%p                                                               |
+| 실자료 재생 | 진행 중 WC 경기 및 완료 WC 고정. 종료 판본의 KS 5차전 홈 배정 충돌 검출로 1,000회 우승 미결정 유지                                                                                      |
+| 검증        | 사용자 전용 74개·전체 529개 통과, 실제 자료 실행 7건, 부모 산출물 5개 해시·실행 소스 7건 일치, Git diff 검사 종료 0                                                                     |
+| 상태·제한   | 기술 검증 및 하위 기술 수용 완료; 문서 반영·종료 Commit·PR·병합·Issue 종료 대기. 공식 경기 사실 정확성, 당시 일정·모델 이용 시점, 다른 시즌 규칙 및 2026 최종 Test는 미지원 또는 미실행 |
+
+대표 실행의 한국시리즈 공동 유효 분모는 899회이다. LG 552/899(61.4016%), 한화 146/899(16.2403%), 삼성 103/899(11.4572%)이며 이는 2025년 9월 1일 기준 가정 시나리오의 추정 확률이다. 전체 1,000회 중 미결정 101회를 보존하며, 개별 사건 유효 분모와 리그 공동 분모를 구분한다. 같은 Seed 재현과 반복 안정성은 실제 결과 적중률이나 정식 Backtesting 성능을 의미하지 않는다.
+
+```powershell
+Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
+$root = (Get-Location).Path
+$python = Join-Path $root '.venv/Scripts/python.exe'
+$asset = Join-Path $root 'models/m1/0d9433b8044e48e5a4d21bbdb9b432e5/model.json'
+& $python -X utf8 -B -m src.simulation.postseason --project-root $root simulate --run-id '259b38decaac4ed68dd5a596cfbe4849' --asset $asset --season 2025 --as-of 2025-09-01 --parent-run 'e24254420aee4d52acf2b1fb144c3d58' --seed 42
+if ($LASTEXITCODE -ne 0) { throw '포스트시즌 전망 실행 실패' }
+```
+
+결과는 `results/postseason/<실행 ID>/`의 `scenario.json`, `summary.json`, `iterations.jsonl`, `manifest.json`으로 저장한다. 과거 원천 판본의 종료 후 재생은 `--archive-assumption`을 명시해야 하며, 자료 충돌이 발생하면 결과를 임의 보충하지 않는다. 전체 규칙·자료·확률 분모·검증·실행은 [포스트시즌 전망 실행과 결과 계약](docs/standards/postseason_forecast.md)을 참조한다.
 
 <a id="outputs"></a>
 
@@ -812,7 +863,7 @@ if ($LASTEXITCODE -ne 0) { throw '정규시즌 전망 실행 실패' }
 
 현재 `check`가 출력하는 JSON은 환경·설정 확인 결과다. 경기·선수의 예측 결과나 성능 보고가 아니다.
 
-M1·M2·M3·M4·M5 및 정규시즌의 실제 저장 예측과 후속 예측·평가 결과에서는 **대상·기준 시점 → 기간·자료 범위 → 확정/예측/가정/미확정 상태 → 데이터·모델·실행 버전 → 평가 가능 범위** 순서로 확인한다. 실제 0과 미관측은 다르며, 높은 확률은 결과 보장이 아니다.
+M1·M2·M3·M4·M5 및 정규시즌·포스트시즌의 실제 저장 예측과 후속 예측·평가 결과에서는 **대상·기준 시점 → 기간·자료 범위 → 확정/예측/가정/미확정 상태 → 데이터·모델·실행 버전 → 평가 가능 범위** 순서로 확인한다. 실제 0과 미관측은 다르며, 높은 확률은 결과 보장이 아니다.
 
 [산출물별 읽기 안내](docs/standards/project_contract.md#outputs)에 경기·타석·선수·상황·투구·시즌·평가 보고의 확인 항목을 정리했다. 스코어와 확률의 차이, 빈 선수 기록, 사후 WPA, 두 우승 해석은 [보충 사례](docs/standards/project_contract.md#interpretation)에서 필요한 항목만 펼쳐 읽는다.
 
@@ -830,6 +881,19 @@ M1·M2·M3·M4·M5 및 정규시즌의 실제 저장 예측과 후속 예측·�
 | 개발 진단                 | 실제 종료 정답과 동일 조건 기준 계산의 비교. 사후 일정 가정의 단일 시즌 평가이며 독립 Test가 아님 |
 
 유한 반복에서 0% 또는 100%가 관측되었다는 사실만으로 수학적 탈락이나 확정을 선언하지 않는다. 확정 상태는 규칙 기반 판정으로 구분한다. 미결정 횟수 및 원인을 함께 읽고, 같은 Seed 재현은 난수 계산 안정성이지 실제 결과 적중률이 아님을 유의한다. [출력·확률 계약](docs/standards/regular_season_standings.md#outputs)과 [평가 및 실제 결과](docs/standards/regular_season_standings.md#evaluation)를 확인한다.
+
+### 포스트시즌 전망의 확인 순서
+
+| 확인 대상                 | 해석 및 유의 사항                                                                             |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `manifest.json`           | 완료 상태와 우승 계산 지원 상태 구분, 입력·소스·결과 해시, Seed·반복 수                       |
+| `scenario.json`           | 시즌 규칙 버전, 기준 시각, 부모 실행 또는 사후 판본 가정, 원천 자료 충돌 사유, M1 대진별 확률 |
+| `summary.json`의 `teams`  | 구단별 사건의 참·거짓·미결정 및 유효 분모·논리적 범위                                         |
+| `summary.json`의 `league` | 시리즈별 공동 승리 분모·우승 결정 및 미결정 수·공동 확률                                      |
+| `conditional_matchups`    | 상·하위 시드 순서가 있는 특정 대진 성립 반복의 시리즈 승리·우승 확률                          |
+| `iterations.jsonl`        | 동일 부모 반복 ID·구단별 순위·1위·진출 상태·시드·라운드별 경기와 승자·미결정 사유             |
+
+원천 기록의 `fixed=true`는 해당 판본에서 완료 근거를 통과한 시리즈라는 뜻이다. 공식 사실 정확성을 보증하지 않는다. `winner=null`을 탈락으로 처리하지 않으며, 2025년 지원 범위를 다른 시즌 및 정식 과거 시점 평가로 확대하지 않는다. [포스트시즌 전망 실행과 결과 계약](docs/standards/postseason_forecast.md)을 따른다.
 
 <a id="help"></a>
 
@@ -1035,7 +1099,7 @@ Get-ChildItem -Force -Name
 ```powershell
 Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
 $python = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
-& $python -X utf8 -B -m unittest discover -s tests/simulation -v
+& $python -X utf8 -B -m unittest discover -s tests/simulation -p 'test_regular_season*.py' -v
 if ($LASTEXITCODE -ne 0) { throw '정규시즌 전용 테스트 실패' }
 & $python -X utf8 -B -m unittest discover -s tests
 if ($LASTEXITCODE -ne 0) { throw '전체 회귀 테스트 실패' }
@@ -1046,3 +1110,16 @@ if ($LASTEXITCODE -ne 0) { throw '변경 형식 검사 실패' }
 ```
 
 문서만 변경하는 경우 기존 계산 산출물과 모델 자산을 덮어쓰거나 학습을 다시 실행할 필요는 없다. 이 명령은 적용 뒤 사용자가 선택하여 검증하는 절차이며 문서 작성만으로 실행 성공이 추가된 것은 아니다.
+
+### 기존 설치 환경에서 포스트시즌 전망 검증
+
+기술 검증 HEAD `c10459f`에서 사용자 전용 74개·전체 529개 테스트를 확인했다. 실제 실행 및 독립 검산은 [포스트시즌 전망 실행과 결과 계약](docs/standards/postseason_forecast.md)에 기록한다. 문서만 바뀌면 모델을 재학습하거나 기존 산출물을 수정하지 않는다.
+
+```powershell
+Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
+$python = Join-Path (Get-Location).Path '.venv/Scripts/python.exe'
+& $python -X utf8 -B -m unittest discover -s tests/simulation -p 'test_postseason*.py' -v
+if ($LASTEXITCODE -ne 0) { throw '포스트시즌 전용 테스트 실패' }
+& $python -X utf8 -B -m unittest discover -s tests
+if ($LASTEXITCODE -ne 0) { throw '전체 회귀 테스트 실패' }
+```
