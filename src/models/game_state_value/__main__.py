@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 import json
 import logging
+from math import isfinite
 from pathlib import Path
 import platform
 import sqlite3
@@ -30,6 +31,17 @@ from ...settings import Settings, load_settings
 
 LOGGER = logging.getLogger(__name__)
 
+REQUIRED_CASES = frozenset({
+    "ordinary_plate_appearance",
+    "three_outs_game_continues",
+    "confirmed_final_tie",
+    "confirmed_final_win",
+    "confirmed_final_loss",
+    "confirmed_partial_final",
+    "observed_walkoff_pattern",
+    "unsupported_importance",
+})
+
 
 def source_hashes() -> dict[str, str]:
     """학습·평가·추론에 사용한 소스의 SHA-256을 기록한다."""
@@ -54,7 +66,7 @@ def source_hashes() -> dict[str, str]:
 
 
 def method_settings() -> dict[str, object]:
-    """실험 전에 고정된 후보와 학습 설정을 기록한다."""
+    """실험 전에 고정된 학습 설정과 시즌 규칙을 반환한다."""
     return {
         "minimum_support": m4.MIN_SUPPORT,
         "epochs": m4.EPOCHS,
@@ -74,6 +86,21 @@ def method_settings() -> dict[str, object]:
         "calibration_bins": evaluation.CALIBRATION_BINS,
         "calibration_fit": False,
         "calibration_diagnostics": True,
+        "season_inning_limits": {
+            str(season): limit
+            for season, limit in m4.SEASON_INNING_LIMITS.items()
+        },
+        "regulation_innings": m4.REGULATION_INNINGS,
+        "reference_inning_limit": m4.REFERENCE_INNING_LIMIT,
+        "frequency_inning": (
+            "actual_before_nine;"
+            "reference_maximum_aligned_from_nine"
+        ),
+        "logistic_horizon_feature": (
+            "score_difference / sqrt(maximum_future_halves + 1)"
+        ),
+        "observed_final_policy": "official_observed_evidence_only",
+        "hypothetical_final_policy": "current_season_normal_rules",
         "re_backoff": [
             "half_outs_base_mask",
             "outs_base_mask",
@@ -86,8 +113,17 @@ def method_settings() -> dict[str, object]:
         "importance_transition_key": (
             "inning|half|score_difference|outs|base_mask"
         ),
+        "importance_transition_code": "runs|post_outs|post_base_mask",
+        "importance_historical_final_reused": False,
         "importance_minimum_support": m4.MIN_SUPPORT,
         "importance_unsupported": None,
+        "inference_boundary_fields": [
+            "game_id",
+            "pa_number",
+            "state",
+        ],
+        "inference_identifiers_are_features": False,
+        "required_boundary_cases": sorted(REQUIRED_CASES),
     }
 
 
@@ -101,11 +137,12 @@ def save_json(path: Path, content: object) -> None:
             indent=2,
             allow_nan=False,
         )
+
         handle.write("\n")
 
 
 def load_payload(path: Path) -> dict[str, object]:
-    """모델 자산의 버전·지문·입력 계약과 구성 요소를 검증한다."""
+    """모델 버전·지문·입력 계약 및 구성 요소를 확인한다."""
     envelope = as_row(read_json(path))
 
     m4.require(
@@ -134,7 +171,10 @@ def load_payload(path: Path) -> dict[str, object]:
         "M4 학습 실행 ID 오류",
     )
 
-    seed = m4.count(payload["configured_seed"], "configured_seed")
+    seed = m4.count(
+        payload["configured_seed"],
+        "configured_seed",
+    )
 
     m4.require(seed < 2**32, "저장 Seed 범위 오류")
 
@@ -164,7 +204,7 @@ def load_model(path: Path) -> value.ValueModel:
 def candidate_key(
     metrics: dict[str, object],
 ) -> tuple[float, float]:
-    """동일 Validation 표본의 사전 고정 선정 기준을 반환한다."""
+    """동일 Validation 표본의 후보 선정 기준을 반환한다."""
     groups = as_row(metrics["groups"])
     overall = as_row(groups["all"])
 
@@ -173,7 +213,11 @@ def candidate_key(
 
     m4.require(
         type(loss) in (int, float)
-        and type(brier) in (int, float),
+        and type(brier) in (int, float)
+        and isfinite(loss)
+        and isfinite(brier)
+        and loss >= 0
+        and 0 <= brier <= 1,
         "운영 후보 선정 지표 오류",
     )
 
@@ -185,7 +229,7 @@ def select_predictor(
     validation: list[m4.Observation],
     seed: int,
 ) -> tuple[m4.Predictor, dict[str, dict[str, object]]]:
-    """기준과 로지스틱 후보를 비교하고 운영 예측기 하나를 선택한다."""
+    """기준 및 로지스틱 후보 중 운영 예측기 하나를 선정한다."""
     results: dict[str, dict[str, object]] = {}
 
     selected = None
@@ -217,12 +261,15 @@ def select_predictor(
             key[1],
         )
 
-        # 정확히 동률이면 앞서 평가한 더 단순한 후보를 유지한다.
+        # 정확한 동률에서는 먼저 평가한 단순 후보를 유지한다.
         if selected_key is None or key < selected_key:
             selected = predictor
             selected_key = key
 
-    m4.require(selected is not None, "운영 예측기 선정 실패")
+    m4.require(
+        selected is not None,
+        "운영 예측기 선정 실패",
+    )
 
     return selected, results
 
@@ -231,7 +278,7 @@ def example_cases(
     asset: value.ValueModel,
     pairs: Sequence[data.Pair],
 ) -> list[dict[str, object]]:
-    """실제 Validation에서 종료·계속·희소 경계 예시를 보존한다."""
+    """실제 Validation의 필수 관측 경계 예시를 보존한다."""
     examples = []
     found: set[str] = set()
 
@@ -250,8 +297,10 @@ def example_cases(
         if pair.final is not None:
             if pair.final.winner == "tie":
                 names.append("confirmed_final_tie")
+
             elif pair.post.final == 1:
                 names.append("confirmed_final_win")
+
             else:
                 names.append("confirmed_final_loss")
 
@@ -260,7 +309,7 @@ def example_cases(
 
             if (
                 post.half == "bot"
-                and post.inning >= 9
+                and post.inning >= m4.REGULATION_INNINGS
                 and pre.difference <= 0
                 and post.difference > 0
             ):
@@ -268,7 +317,8 @@ def example_cases(
 
         support = sum(
             asset["transitions"].get(
-                m4.exact_key(pre), {}
+                m4.exact_key(pre),
+                {},
             ).values()
         )
 
@@ -293,33 +343,178 @@ def example_cases(
 
         found.update(new_names)
 
-        if len(found) == 8:
+        if REQUIRED_CASES <= found:
             break
 
-    m4.require(bool(examples), "독립 추론 검증 예시 없음")
-
-    required = {
-        "ordinary_plate_appearance",
-        "three_outs_game_continues",
-        "confirmed_final_tie",
-        "confirmed_final_win",
-        "confirmed_final_loss",
-        "confirmed_partial_final",
-    }
+    missing = sorted(REQUIRED_CASES - found)
 
     m4.require(
-        required <= found,
-        "인수 Validation의 필수 종료·계속 사례 누락",
+        not missing,
+        f"Validation의 필수 재현 사례 누락: {missing}",
     )
 
     return examples
+
+
+def verify_example(
+    asset: value.ValueModel,
+    example: dict[str, object],
+) -> set[str]:
+    """저장 예시의 재현값과 경계 사례별 의미를 검증한다."""
+    inputs = as_row(example["input"])
+    expected = as_row(example["prediction"])
+
+    actual = value.predict(asset, inputs)
+
+    m4.require(
+        actual == expected,
+        "독립 프로세스 추론 예시 불일치",
+    )
+
+    pre = as_row(actual["pre"])
+    post = as_row(actual["post"])
+    importance = as_row(actual["importance"])
+
+    pair_id = (
+        f"{actual['game_id']}:{actual['pa_number']}"
+    )
+
+    m4.require(
+        pair_id == example["pair_id"],
+        "저장 예시의 타석 식별자 불일치",
+    )
+
+    names = set(example["cases"])
+
+    m4.require(
+        bool(names) and names <= REQUIRED_CASES,
+        "저장 예시의 경계 분류 오류",
+    )
+
+    if "ordinary_plate_appearance" in names:
+        m4.require(
+            not post["game_end_confirmed"]
+            and not post["half_ended"],
+            "일반 타석 재현 오류",
+        )
+
+    if "three_outs_game_continues" in names:
+        m4.require(
+            not post["game_end_confirmed"]
+            and post["half_ended"]
+            and post["remaining_expected_runs"] == 0.0
+            and 0 < post["win_probability"] < 1,
+            "경기 계속 3아웃 재현 오류",
+        )
+
+    if "confirmed_final_tie" in names:
+        m4.require(
+            post["game_end_confirmed"]
+            and post["boundary"] == "confirmed_final_tie"
+            and post["win_probability"] == 0.0
+            and post["remaining_expected_runs"] == 0.0,
+            "무승부 종료 재현 오류",
+        )
+
+    if "confirmed_final_win" in names:
+        m4.require(
+            post["game_end_confirmed"]
+            and post["win_probability"] == 1.0
+            and post["remaining_expected_runs"] == 0.0,
+            "승리 종료 재현 오류",
+        )
+
+    if "confirmed_final_loss" in names:
+        m4.require(
+            post["game_end_confirmed"]
+            and post["boundary"] != "confirmed_final_tie"
+            and post["win_probability"] == 0.0
+            and post["remaining_expected_runs"] == 0.0,
+            "패배 종료 재현 오류",
+        )
+
+    if "confirmed_partial_final" in names:
+        m4.require(
+            post["game_end_confirmed"]
+            and post["half_ended"]
+            and post["remaining_expected_runs"] == 0.0,
+            "부분 반이닝 종료 재현 오류",
+        )
+
+    if "observed_walkoff_pattern" in names:
+        m4.require(
+            actual["observed_walkoff_pattern"]
+            and post["game_end_confirmed"]
+            and post["win_probability"] == 1.0,
+            "관측 끝내기 패턴 재현 오류",
+        )
+
+    if "unsupported_importance" in names:
+        m4.require(
+            importance["value"] is None
+            and importance["support"] < m4.MIN_SUPPORT
+            and importance["reason"] == "insufficient_transition_support",
+            "희소 상황 중요도 재현 오류",
+        )
+
+    m4.require(
+        abs(
+            actual["wpa"]
+            - (
+                post["win_probability"]
+                - pre["win_probability"]
+            )
+        ) < 1e-12,
+        "저장 예시 WPA 산식 불일치",
+    )
+
+    return names
+
+
+def verify_examples(
+    asset: value.ValueModel,
+    examples: Sequence[dict[str, object]],
+) -> set[str]:
+    """필수 실제 관측 사례 전체가 재현되는지 확인한다."""
+    m4.require(bool(examples), "독립 추론 예시 없음")
+
+    verified: set[str] = set()
+
+    for example in examples:
+        verified.update(
+            verify_example(asset, example),
+        )
+
+    missing = sorted(REQUIRED_CASES - verified)
+
+    m4.require(
+        not missing,
+        f"필수 재현 사례 검증 누락: {missing}",
+    )
+
+    return verified
+
+
+def rule_verification(
+    examples: Sequence[dict[str, object]],
+) -> list[dict[str, object]]:
+    """규칙 검증용 합성 상태를 일관되게 재생성한다."""
+    m4.require(bool(examples), "규칙 검증의 참조 예시 없음")
+
+    raw = as_row(examples[0]["input"])
+
+    _, _, pre = value.parse_boundary(
+        raw["pre"],
+    )
+
+    return value.rule_examples(pre)
 
 
 def compare_baseline(
     selected: str,
     candidates: dict[str, dict[str, object]],
 ) -> dict[str, object]:
-    """운영 후보와 기준 모델의 지표 변화량을 기록한다."""
+    """운영 후보와 기준 모델의 지표 차이를 기록한다."""
     baseline = as_row(
         as_row(candidates["frequency"]["groups"])["all"]
     )
@@ -343,7 +538,7 @@ def train_run(
     settings: Settings,
     run_id: str,
 ) -> dict[str, object]:
-    """자료 검사부터 개발 모델 선택, 자산 저장까지 수행한다."""
+    """자료 검사부터 후보 선택·저장·재현 검사까지 수행한다."""
     initial_hashes = source_hashes()
 
     LOGGER.info("M4 자료 인수 검사 시작: %s", run_id)
@@ -370,8 +565,12 @@ def train_run(
 
     selected = predictor["name"]
 
-    LOGGER.info("M4 운영 승리 예측기 선정: %s", selected)
-    LOGGER.info("Train 잔여 기대득점 및 상태 전이 집계")
+    LOGGER.info(
+        "M4 운영 승리 예측기 선정: %s",
+        selected,
+    )
+
+    LOGGER.info("Train 잔여 기대득점 및 물리 상태 전이 집계")
 
     re_table = value.fit_re(train_rows)
     transitions = value.fit_transitions(train_pairs)
@@ -410,6 +609,12 @@ def train_run(
         validation_pairs,
     )
 
+    verified_cases = verify_examples(
+        asset,
+        examples,
+    )
+
+    rule_cases = rule_verification(examples)
     example = examples[0]
 
     training_run = uuid4().hex
@@ -435,7 +640,6 @@ def train_run(
         "학습 실행 중 소스 변경 확인",
     )
 
-    # 자료는 읽기 전용으로 접근하며 실행 전후 지문을 대조한다.
     m4.require(
         sha256_file(Path(provenance["database"]))
         == provenance["database_sha256"]
@@ -467,6 +671,8 @@ def train_run(
         "transition_state_count": len(transitions),
         "re_table_count": len(re_table),
         "examples": examples,
+        "verified_boundary_cases": sorted(verified_cases),
+        "season_rule_examples": rule_cases,
         "source_sha256": initial_hashes,
         "paths": paths,
         "final_test_evaluated": False,
@@ -499,8 +705,15 @@ def train_run(
         "evaluation_fingerprint": fingerprint(report),
     }
 
-    model_directory.mkdir(parents=True, exist_ok=False)
-    result_directory.mkdir(parents=True, exist_ok=False)
+    model_directory.mkdir(
+        parents=True,
+        exist_ok=False,
+    )
+
+    result_directory.mkdir(
+        parents=True,
+        exist_ok=False,
+    )
 
     pending = model_directory / "model.pending.json"
 
@@ -511,17 +724,32 @@ def train_run(
 
     restored = load_model(pending)
 
-    for case in examples:
-        m4.require(
-            value.predict(restored, case["input"]) == case["prediction"],
-            "저장 전후 관측 타석 가치 재현 불일치",
-        )
+    m4.require(
+        verify_examples(restored, examples) == verified_cases,
+        "저장 전후 필수 예시 재현 불일치",
+    )
 
-    save_json(Path(paths["input"]), example["input"])
-    save_json(Path(paths["prediction"]), example["prediction"])
-    save_json(Path(paths["evaluation"]), report)
+    m4.require(
+        rule_verification(examples) == rule_cases,
+        "저장 전후 시즌 규칙 재현 불일치",
+    )
 
-    # 모든 자료 저장 및 복원 검사를 통과한 뒤 운영 파일을 확정한다.
+    save_json(
+        Path(paths["input"]),
+        example["input"],
+    )
+
+    save_json(
+        Path(paths["prediction"]),
+        example["prediction"],
+    )
+
+    save_json(
+        Path(paths["evaluation"]),
+        report,
+    )
+
+    # 모든 저장 및 복원 검사를 통과한 운영 파일만 확정한다.
     pending.rename(Path(paths["model"]))
 
     LOGGER.info(
@@ -535,6 +763,7 @@ def train_run(
         "training_run_id": training_run,
         "selected_model": selected,
         "model_schema": SCHEMA,
+        "model_version": VERSION,
         "operational_predictor_count": 1,
         "configured_seed": settings.seed,
         "paths": paths,
@@ -543,6 +772,8 @@ def train_run(
         "baseline_comparison": report["baseline_comparison"],
         "importance_reference": reference,
         "importance_validation": pair_metrics["importance"],
+        "verified_boundary_cases": sorted(verified_cases),
+        "season_rule_examples": rule_cases,
         "evaluation_fingerprint": fingerprint(report),
         "evaluation_sha256": sha256_file(Path(paths["evaluation"])),
         "model_sha256": sha256_file(Path(paths["model"])),
@@ -555,7 +786,7 @@ def verify_run(
     model_path: Path,
     evaluation_path: Path,
 ) -> dict[str, object]:
-    """원본 DB 없이 운영 자산·평가·독립 예시를 다시 검증한다."""
+    """원본 DB 없이 운영 자산과 평가·추론 사례를 다시 검증한다."""
     m4.require(
         model_path.name == "model.json",
         "확정된 model.json 자산이 필요합니다.",
@@ -575,7 +806,8 @@ def verify_run(
         and report["operational_predictor_count"] == 1
         and report["data"] == payload["data"]
         and report["method_settings"] == payload["method_settings"]
-        and report["final_test_evaluated"] is False,
+        and report["final_test_evaluated"] is False
+        and report["validation_used_for_selection"] is True,
         "M4 자산·평가 실행 계약 불일치",
     )
 
@@ -585,7 +817,10 @@ def verify_run(
         "학습 당시 소스와 현재 소스 SHA-256 불일치",
     )
 
-    asset = cast(value.ValueModel, payload["model"])
+    asset = cast(
+        value.ValueModel,
+        payload["model"],
+    )
 
     candidates = as_row(report["candidate_evaluations"])
 
@@ -594,11 +829,26 @@ def verify_run(
         "후보 평가 자료 누락",
     )
 
-    counts = as_row(as_row(report["data"])["counts"])
+    provenance = as_row(report["data"])
+
+    m4.require(
+        provenance["test_target_values_read"] is False,
+        "최종 Test 정답 격리 오류",
+    )
+
+    counts = as_row(provenance["counts"])
 
     validation_count = as_row(
         as_row(counts["validation"])["eligible"]
     )["states"]
+
+    validation_pairs = as_row(
+        as_row(counts["validation"])["eligible"]
+    )["pairs"]
+
+    train_pairs = as_row(
+        as_row(counts["train"])["eligible"]
+    )["pairs"]
 
     for candidate in candidates.values():
         overall = as_row(
@@ -628,6 +878,39 @@ def verify_run(
         "저장 운영 후보의 선정 기준 불일치",
     )
 
+    re_report = as_row(report["re_evaluation"])
+    re_candidates = as_row(re_report["candidates"])
+
+    m4.require(
+        set(re_candidates) == {
+            "global_mean",
+            "conditional_mean",
+        },
+        "RE 비교 후보 누락",
+    )
+
+    for candidate in re_candidates.values():
+        overall = as_row(
+            as_row(candidate)["all"],
+        )
+
+        m4.require(
+            overall["count"] == validation_count,
+            "RE 비교의 동일 Validation 분모 오류",
+        )
+
+    pair_report = as_row(report["pair_evaluation"])
+    importance_report = as_row(pair_report["importance"])
+
+    m4.require(
+        pair_report["pairs"] == validation_pairs
+        and importance_report["supported"]
+        + importance_report["unsupported"] == validation_pairs
+        and asset["reference"]["total"] == train_pairs
+        and report["importance_reference"] == asset["reference"],
+        "상황 중요도 참조 및 평가 분모 오류",
+    )
+
     examples = report["examples"]
 
     m4.require(
@@ -635,20 +918,30 @@ def verify_run(
         "저장 독립 추론 예시 오류",
     )
 
-    verified_cases: set[str] = set()
+    verified_cases = verify_examples(
+        asset,
+        examples,
+    )
 
-    for example in examples:
-        example = as_row(example)
+    m4.require(
+        report["verified_boundary_cases"] == sorted(verified_cases),
+        "필수 사례 목록 불일치",
+    )
 
-        m4.require(
-            value.predict(asset, example["input"]) == example["prediction"],
-            "독립 프로세스 추론 예시 불일치",
-        )
+    rule_cases = rule_verification(examples)
 
-        verified_cases.update(example["cases"])
+    m4.require(
+        report["season_rule_examples"] == rule_cases,
+        "시즌별 가상 전이 규칙 재현 실패",
+    )
 
-    input_path = evaluation_path.with_name("example_input.json")
-    prediction_path = evaluation_path.with_name("example_prediction.json")
+    input_path = evaluation_path.with_name(
+        "example_input.json"
+    )
+
+    prediction_path = evaluation_path.with_name(
+        "example_prediction.json"
+    )
 
     inputs = as_row(read_json(input_path))
     expected = as_row(read_json(prediction_path))
@@ -665,12 +958,15 @@ def verify_run(
         "training_run_id": payload["training_run_id"],
         "selected_model": selected,
         "model_schema": SCHEMA,
+        "model_version": VERSION,
         "operational_predictor_count": 1,
         "source_hashes_match": True,
         "evaluation_fingerprint_match": True,
         "example_prediction_match": True,
         "verified_examples": len(examples),
         "verified_cases": sorted(verified_cases),
+        "season_rule_examples_match": True,
+        "season_rule_examples": rule_cases,
         "model_sha256": sha256_file(model_path),
         "evaluation_sha256": sha256_file(evaluation_path),
         "final_test_evaluated": False,
@@ -678,10 +974,13 @@ def verify_run(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """성공 0, 자료·설정·저장 오류 2, 사용자 중단 3을 반환한다."""
+    """성공 0, 실행 오류 2, 사용자 중단 3을 반환한다."""
     parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_argument("--project-root", type=Path)
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+    )
 
     commands = parser.add_subparsers(
         dest="command",
@@ -714,7 +1013,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         if args.command == "train":
-            result = train_run(settings, args.run_id)
+            result = train_run(
+                settings,
+                args.run_id,
+            )
 
         elif args.command == "verify":
             result = verify_run(
@@ -731,7 +1033,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             asset = load_model(args.asset)
             raw = as_row(read_json(args.input))
 
-            result = value.predict(asset, raw)
+            result = value.predict(
+                asset,
+                raw,
+            )
 
         print(json.dumps(
             result,

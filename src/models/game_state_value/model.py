@@ -15,6 +15,19 @@ EPOCHS = 12
 BATCH_SIZE = 512
 LEARNING_RATE = 0.15
 
+REGULATION_INNINGS = 9
+
+# 현재 프로젝트의 관측·평가 대상 정규시즌 규칙만 지원한다.
+# 2025년 KBO 이사회 개정으로 연장전 최대 이닝이 축소되었다.
+SEASON_INNING_LIMITS = {
+    2023: 12,
+    2024: 12,
+    2025: 11,
+    2026: 11,
+}
+
+REFERENCE_INNING_LIMIT = 12
+
 TEAM_FIELDS = (
     "season_games",
     "season_rf",
@@ -62,13 +75,13 @@ StatTable = dict[str, list[int]]
 
 
 def require(condition: bool, message: str) -> None:
-    """자료 또는 실행 계약이 충족되지 않으면 중단한다."""
+    """자료 또는 실행 계약을 충족하지 않으면 중단한다."""
     if not condition:
         raise ValueError(message)
 
 
 def count(value: object, name: str) -> int:
-    """음이 아닌 정수만 허용한다. bool은 정수 입력으로 보지 않는다."""
+    """bool을 제외한 음이 아닌 정수만 허용한다."""
     if type(value) is not int or value < 0:
         raise ValueError(f"{name}: 음이 아닌 정수가 필요합니다.")
     return value
@@ -81,9 +94,19 @@ def optional_count(value: object, name: str) -> int | None:
     return count(value, name)
 
 
+def inning_limit(season: int) -> int:
+    """확인된 정규시즌의 최대 이닝을 반환한다."""
+    require(
+        type(season) is int and season in SEASON_INNING_LIMITS,
+        f"지원되지 않는 정규시즌 규칙: {season}",
+    )
+
+    return SEASON_INNING_LIMITS[season]
+
+
 @dataclass(frozen=True, slots=True)
 class State:
-    """관측 경계에서 사용할 수 있는 경기 상태와 과거 기록."""
+    """관측 경계에서 사용할 수 있는 상태와 과거 기록."""
 
     season: int
     competition: str
@@ -126,7 +149,7 @@ class State:
 
     @property
     def mask(self) -> int:
-        """3아웃의 잔존 주자 표시는 모델 특징에서 제외한다."""
+        """3아웃 이후 잔존 주자는 특징에서 제외한다."""
         if self.outs == 3:
             return 0
 
@@ -154,7 +177,7 @@ STATIC_COLUMNS = tuple(
 
 
 def parse_state(raw: Mapping[str, object]) -> State:
-    """입력 허용 목록, 상태 범위 및 공격팀 관점을 검사한다."""
+    """입력 허용 목록과 시즌별 상태 범위를 검사한다."""
     require(
         set(raw) == set(INPUT_COLUMNS),
         "M4 입력 열 누락 또는 허용되지 않은 열 존재",
@@ -168,11 +191,19 @@ def parse_state(raw: Mapping[str, object]) -> State:
     ):
         count(raw[name], name)
 
-    require(raw["competition"] == "regular", "정규시즌만 지원합니다.")
+    require(
+        raw["competition"] == "regular",
+        "정규시즌만 지원합니다.",
+    )
+
     require(raw["half"] in ("top", "bot"), "초말 구분 오류")
     require(raw["phase"] in ("pre", "post"), "타석 경계 구분 오류")
-    require(raw["season"] > 0, "시즌 오류")
-    require(raw["inning"] >= 1, "이닝 범위 오류")
+
+    require(
+        1 <= raw["inning"] <= inning_limit(raw["season"]),
+        "시즌별 이닝 범위 오류",
+    )
+
     require(raw["home_team_id"] > 0, "홈팀 식별자 오류")
     require(raw["away_team_id"] > 0, "원정팀 식별자 오류")
     require(raw["home_team_id"] != raw["away_team_id"], "동일 대진 오류")
@@ -222,7 +253,7 @@ def parse_state(raw: Mapping[str, object]) -> State:
 
 
 def validate_pair(pre: State, post: State) -> int:
-    """같은 타석의 전후 계약을 검사하고 실제 공격팀 득점을 반환한다."""
+    """같은 타석의 상태 계약을 검사하고 실제 득점을 반환한다."""
     require(
         pre.phase == "pre" and post.phase == "post",
         "타석 전후 경계 순서 오류",
@@ -237,10 +268,12 @@ def validate_pair(pre: State, post: State) -> int:
     )
 
     require(post.outs >= pre.outs, "타석 이후 아웃 감소")
+
     require(
         post.opponent_score == pre.opponent_score,
         "관측 타석 중 수비팀 점수 변경",
     )
+
     require(post.score >= pre.score, "공격팀 점수 감소")
 
     return post.score - pre.score
@@ -248,7 +281,7 @@ def validate_pair(pre: State, post: State) -> int:
 
 @dataclass(frozen=True, slots=True)
 class FinalEvidence:
-    """모델 특징과 분리한 관측 경기 종료 감사 근거."""
+    """모델 특징에서 분리한 관측 경기 종료 감사 근거."""
 
     game_id: str
     pa_number: int
@@ -269,7 +302,7 @@ class FinalEvidence:
 def parse_final(
     raw: Mapping[str, object] | None,
 ) -> FinalEvidence | None:
-    """종료 근거의 구조를 검사한다."""
+    """종료 근거의 구조와 식별자 범위를 검사한다."""
     if raw is None:
         return None
 
@@ -279,9 +312,11 @@ def parse_final(
     )
 
     require(
-        isinstance(raw["game_id"], str) and bool(raw["game_id"].strip()),
+        isinstance(raw["game_id"], str)
+        and bool(raw["game_id"].strip()),
         "경기 종료 식별자 오류",
     )
+
     require(
         isinstance(raw["source_sha"], str)
         and re.fullmatch(r"[0-9a-f]{64}", raw["source_sha"]) is not None,
@@ -296,6 +331,11 @@ def parse_final(
     ):
         count(raw[name], name)
 
+    require(
+        raw["pa_number"] > 0 and raw["last_pa"] > 0,
+        "경기 종료 타석 번호 오류",
+    )
+
     return FinalEvidence(**raw)
 
 
@@ -303,12 +343,21 @@ def final_result(
     state: State,
     evidence: FinalEvidence | None,
 ) -> int | None:
-    """검증된 경기 종료에서만 동일 공격팀의 승리 확정값을 반환한다."""
+    """관측 공식 종료 근거가 있는 경우만 확정 승리값을 반환한다."""
     if evidence is None:
         return None
 
     require(state.phase == "post", "타석 직전에는 종료값 적용 불가")
-    require(evidence.pa_number == evidence.last_pa, "마지막 타석 불일치")
+
+    require(
+        evidence.pa_number == evidence.last_pa,
+        "마지막 타석 불일치",
+    )
+
+    require(
+        1 <= state.inning <= inning_limit(state.season),
+        "공식 종료 상태의 시즌별 이닝 범위 오류",
+    )
 
     require(
         evidence.official_status == "Final"
@@ -333,7 +382,10 @@ def final_result(
         else "tie"
     )
 
-    require(evidence.winner == expected_winner, "공식 경기 결과 불일치")
+    require(
+        evidence.winner == expected_winner,
+        "공식 경기 결과 불일치",
+    )
 
     if evidence.terminal_state == "home_leads_partial_bottom_candidate":
         require(
@@ -358,12 +410,89 @@ def final_result(
     else:
         raise ValueError("지원되지 않는 경기 종료 근거")
 
+    # 공식 종료와 일반 규칙은 역할을 구분한다.
+    # 예외적 조기 종료는 관측 근거를 우선하며 원인을 추정하지 않는다.
     return int(state.difference > 0)
+
+
+def normal_final_result(
+    pre: State,
+    post: State,
+) -> int | None:
+    """가상 전이에 정상 정규시즌 종료 규칙을 적용한다.
+
+    실제 관측 경기의 종료를 인증하는 함수가 아니다.
+    반환값은 동일 공격팀의 승리=1, 패배·무승부=0,
+    정상 규칙상 경기 계속=None이다.
+    """
+    validate_pair(pre, post)
+
+    maximum = inning_limit(post.season)
+
+    require(
+        1 <= post.inning <= maximum,
+        "가상 상태의 시즌별 이닝 범위 오류",
+    )
+
+    if post.inning < REGULATION_INNINGS:
+        return None
+
+    if post.half == "top":
+        # 9회초 이후 수비 중인 홈팀이 앞선 채 초가 끝나면
+        # 말 공격 없이 종료된다.
+        if post.outs == 3 and post.difference < 0:
+            return 0
+
+        return None
+
+    # 9회말 이후 동점 또는 열세에서 앞서게 되면 정상 끝내기다.
+    if pre.difference <= 0 and post.difference > 0:
+        return 1
+
+    if post.outs != 3:
+        return None
+
+    if post.difference != 0:
+        return int(post.difference > 0)
+
+    # 최대 이닝의 말 공격까지 동점이면 무승부다.
+    if post.inning == maximum:
+        return 0
+
+    return None
+
+
+def maximum_future_halves(state: State) -> int:
+    """현재 반이닝을 제외한 최대 후속 반이닝 수를 반환한다.
+
+    실제 경기의 잔여 이닝 예측값이 아닌 규칙상 상한이다.
+    """
+    maximum = inning_limit(state.season)
+
+    require(
+        1 <= state.inning <= maximum,
+        "잔여 경기 기회 계산의 이닝 범위 오류",
+    )
+
+    return (
+        2 * (maximum - state.inning)
+        + int(state.half == "top")
+    )
+
+
+def frequency_inning(state: State) -> int:
+    """9회 이후 상태를 같은 최대 잔여 이닝의 참조 상태에 연결한다."""
+    maximum = inning_limit(state.season)
+
+    if state.inning < REGULATION_INNINGS:
+        return state.inning
+
+    return state.inning + REFERENCE_INNING_LIMIT - maximum
 
 
 @dataclass(frozen=True, slots=True)
 class Observation:
-    """학습·평가용 상태와 정답. 정답은 입력 상태와 분리한다."""
+    """학습·평가용 상태와 분리된 정답."""
 
     state: State
     win: int
@@ -386,15 +515,18 @@ def inning_group(inning: int) -> int:
     """초반·중반·후반·연장 상태를 구분한다."""
     if inning <= 3:
         return 1
+
     if inning <= 6:
         return 2
+
     if inning <= 9:
         return 3
+
     return 4
 
 
 def exact_key(state: State) -> str:
-    """상태 빈도와 전이 분포의 정확 상태 키."""
+    """물리적 타석 전이를 집계하는 실제 이닝 기반 키."""
     return (
         f"{state.inning}|{state.half}|{state.difference}|"
         f"{state.outs}|{state.mask}"
@@ -402,15 +534,16 @@ def exact_key(state: State) -> str:
 
 
 def frequency_keys(state: State) -> tuple[str, ...]:
-    """세부 상태부터 전체 빈도까지 희소 후퇴 순서를 고정한다."""
-    group = inning_group(state.inning)
+    """승리 빈도에 최대 잔여 이닝 기준 후퇴 순서를 적용한다."""
+    inning = frequency_inning(state)
+    group = inning_group(inning)
     half = state.half
     diff = state.difference
     outs = state.outs
     mask = state.mask
 
     return (
-        f"exact:{exact_key(state)}",
+        f"exact:{inning}|{half}|{diff}|{outs}|{mask}",
         f"group:{group}|{half}|{diff}|{outs}|{mask}",
         f"outs:{group}|{half}|{diff}|{outs}",
         f"score:{group}|{half}|{diff}",
@@ -425,7 +558,7 @@ def accumulate(
     keys: Iterable[str],
     target: int,
 ) -> None:
-    """표본 수와 정답 합을 저장한다."""
+    """표본 수와 정답 합을 누적한다."""
     for key in keys:
         entry = table.setdefault(key, [0, 0])
         entry[0] += 1
@@ -453,12 +586,16 @@ def lookup(
 
 
 def fit_frequency(rows: Sequence[Observation]) -> Predictor:
-    """Train 비종료 상태의 승리 빈도를 집계한다."""
+    """Train의 비종료 상태 승리 빈도를 집계한다."""
     table: StatTable = {}
 
     for row in rows:
         if row.final is None:
-            accumulate(table, frequency_keys(row.state), row.win)
+            accumulate(
+                table,
+                frequency_keys(row.state),
+                row.win,
+            )
 
     require("global" in table, "학습할 승리 상태 없음")
 
@@ -478,7 +615,7 @@ def history_features(
     runs_against: int | None,
     wins: int | None,
 ) -> tuple[float, ...]:
-    """과거 집계의 누락을 분리하고 초기 시즌의 변동성을 완화한다."""
+    """과거 집계의 누락을 표시하고 초기 시즌 변동을 완화한다."""
     missing = any(
         value is None
         for value in (games, runs_for, runs_against, wins)
@@ -487,7 +624,6 @@ def history_features(
     n = games or 0
 
     # 과거 5경기, 경기당 4득점·4실점, 승률 0.5의 고정 평활화.
-    # 학습 자료의 실제 미관측값을 임의 관측값으로 저장하지 않는다.
     return (
         n / (n + 20.0),
         ((runs_for or 0) + 20.0) / (n + 5.0),
@@ -498,12 +634,14 @@ def history_features(
 
 
 def features(state: State, history: bool) -> tuple[float, ...]:
-    """정답·종료 근거·식별자를 제외한 예측 특징을 구성한다."""
+    """관측 상태와 시즌별 경기 기회로 예측 특징을 구성한다."""
     inning = float(state.inning)
     diff = float(state.difference)
     home = float(state.attacking_home)
     late = float(state.inning >= 7)
     mask = state.mask
+
+    future_halves = maximum_future_halves(state)
 
     core = (
         inning,
@@ -517,7 +655,9 @@ def features(state: State, history: bool) -> tuple[float, ...]:
         diff * home,
         abs(diff),
         late,
-        diff * late,
+        # 남은 경기 기회가 작을수록 같은 점수차의 의미가 커진다.
+        # 학습 구간에 없던 시즌별 독립 계수를 적합하지 않는다.
+        diff / sqrt(future_halves + 1.0),
     )
 
     if not history:
@@ -570,7 +710,7 @@ def fit_logistic(
 
     history, l2 = METHODS[name]
 
-    # 동일 특징·정답의 중복을 집계하되 표본별 가중치를 보존한다.
+    # 동일 특징과 정답의 중복을 집계하되 가중치를 보존한다.
     grouped = Counter(
         (features(row.state, history), row.win)
         for row in rows
@@ -578,6 +718,7 @@ def fit_logistic(
     )
 
     require(bool(grouped), "로지스틱 학습 자료 없음")
+
     require(
         {label for _, label in grouped} == {0, 1},
         "이진 분류에 두 정답 범주가 모두 필요합니다.",
@@ -643,7 +784,7 @@ def fit_logistic(
                 for j, value in enumerate(vector):
                     gradient[j + 1] += error * value
 
-            # 절편에는 L2 규제를 적용하지 않는다.
+            # 절편은 규제하지 않는다.
             weights[0] -= rate * gradient[0] / batch_weight
 
             for j in range(1, dimension + 1):
@@ -671,7 +812,7 @@ def predict_win(
     state: State,
     confirmed_final: int | None = None,
 ) -> tuple[float, str, int | None]:
-    """확정 종료 또는 선택된 분류기의 무조건부 승리 확률을 반환한다."""
+    """확정 종료 또는 선택 분류기의 무조건부 승리 확률을 반환한다."""
     if confirmed_final is not None:
         require(
             type(confirmed_final) is int
@@ -679,6 +820,7 @@ def predict_win(
             and state.phase == "post",
             "확정 종료 확률 계약 오류",
         )
+
         return float(confirmed_final), "confirmed_final", None
 
     if model["name"] == "frequency":
@@ -687,7 +829,6 @@ def predict_win(
             frequency_keys(state),
         )
 
-        # 미출현 결과에 0/1 확률을 부여하지 않는 Laplace 평활화.
         return (wins + 1.0) / (n + 2.0), level, n
 
     history, _ = METHODS[model["name"]]
@@ -705,9 +846,15 @@ def predict_win(
     return sigmoid(linear), model["name"], None
 
 
-def validate_table(table: StatTable, binary: bool = False) -> None:
-    """복원된 통계표의 표본 수와 정답 합을 검사한다."""
-    require(isinstance(table, dict) and "global" in table, "통계표 오류")
+def validate_table(
+    table: StatTable,
+    binary: bool = False,
+) -> None:
+    """복원된 통계표의 지원 수와 정답 합을 검사한다."""
+    require(
+        isinstance(table, dict) and "global" in table,
+        "통계표 오류",
+    )
 
     for key, entry in table.items():
         require(
@@ -727,7 +874,7 @@ def validate_table(table: StatTable, binary: bool = False) -> None:
 
 
 def validate_predictor(model: Predictor) -> None:
-    """자산 복원 시 단일 예측기의 구조와 수치 계약을 검사한다."""
+    """자산 복원 시 단일 분류기의 구조와 수치를 검사한다."""
     require(
         set(model) == {
             "name", "table", "means",
@@ -744,12 +891,14 @@ def validate_predictor(model: Predictor) -> None:
 
     if name == "frequency":
         validate_table(model["table"], binary=True)
+
         require(
             not model["means"]
             and not model["scales"]
             and not model["weights"],
             "빈도 모델에 별도 분류기 존재",
         )
+
         return
 
     dimension = 22 if history else 12

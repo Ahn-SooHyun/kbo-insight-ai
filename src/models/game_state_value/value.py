@@ -1,4 +1,4 @@
-"""잔여 기대득점과 관측 타석 가치, 상황 중요도를 계산한다."""
+"""잔여 기대득점, 관측 타석 가치와 상황 중요도를 계산한다."""
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -30,6 +30,14 @@ class ValueModel(TypedDict):
     reference: ImportanceReference
 
 
+class BoundaryInput(TypedDict):
+    """예측 특징과 분리된 관측 경기·타석 식별자."""
+
+    game_id: str
+    pa_number: int
+    state: dict[str, object]
+
+
 def re_keys(state: m4.State) -> tuple[str, ...]:
     """RE 통계의 세부 상태와 희소 후퇴 순서를 반환한다."""
     return (
@@ -56,6 +64,7 @@ def fit_re(rows: Sequence[m4.Observation]) -> m4.StatTable:
         )
 
     m4.validate_table(table)
+
     return table
 
 
@@ -66,7 +75,7 @@ def predict_re(
     *,
     global_only: bool = False,
 ) -> tuple[float, str, int | None]:
-    """반이닝 종료는 0, 그 외는 학습 통계의 조건부 평균을 반환한다."""
+    """반이닝 종료는 0, 그 외는 학습 통계 평균을 반환한다."""
     if confirmed_final is not None or state.outs == 3:
         return 0.0, "half_ended", None
 
@@ -77,26 +86,39 @@ def predict_re(
 
 
 def transition_code(pair: Pair) -> str:
-    """실제 득점·후속 아웃·주자·관측 종료 결과를 보존한다."""
+    """실제 득점·후속 아웃·주자 상태만 저장한다.
+
+    과거 경기의 공식 종료값을 전이 코드에서 제외한다.
+    다른 시즌에 적용할 때는 해당 시즌의 규칙으로 종료를 판정한다.
+    """
     post = pair.post.state
 
-    terminal = (
-        -1 if pair.post.final is None
-        else pair.post.final
-    )
-
     return (
-        f"{pair.actual_runs}|{post.outs}|"
-        f"{post.mask}|{terminal}"
+        f"{pair.actual_runs}|{post.outs}|{post.mask}"
     )
 
 
-def fit_transitions(pairs: Sequence[Pair]) -> TransitionTable:
-    """Train의 타석 직전 상태별 경험적 다음 상태 분포를 집계한다."""
+def fit_transitions(
+    pairs: Sequence[Pair],
+) -> TransitionTable:
+    """Train 사전 상태별 경험적 물리 전이 분포를 집계한다."""
     table: TransitionTable = {}
 
     for pair in pairs:
-        m4.require(pair.split == "train", "전이 통계에 비학습 타석 유입")
+        m4.require(
+            pair.split == "train",
+            "전이 통계에 비학습 타석 유입",
+        )
+
+        actual = m4.validate_pair(
+            pair.pre.state,
+            pair.post.state,
+        )
+
+        m4.require(
+            actual == pair.actual_runs,
+            "학습 전이의 실제 득점 불일치",
+        )
 
         key = m4.exact_key(pair.pre.state)
         transition = transition_code(pair)
@@ -105,36 +127,40 @@ def fit_transitions(pairs: Sequence[Pair]) -> TransitionTable:
         outcomes[transition] = outcomes.get(transition, 0) + 1
 
     m4.require(bool(table), "학습 전이 자료 없음")
+
     return table
 
 
-def decode_transition(
-    code: str,
-) -> tuple[int, int, int, int | None]:
-    """저장된 상태 전이 값을 복원하고 범위를 검사한다."""
+def decode_transition(code: str) -> tuple[int, int, int]:
+    """득점·아웃·주자의 물리 전이 값을 복원한다."""
     parts = code.split("|")
-    m4.require(len(parts) == 4, "전이 코드 형식 오류")
 
-    runs, outs, mask, terminal = map(int, parts)
+    m4.require(len(parts) == 3, "전이 코드 형식 오류")
+
+    runs, outs, mask = map(int, parts)
 
     m4.require(
         runs >= 0
         and 0 <= outs <= 3
         and 0 <= mask <= 7
-        and terminal in (-1, 0, 1)
         and (outs != 3 or mask == 0),
         "전이 상태 값 오류",
     )
 
-    return runs, outs, mask, None if terminal == -1 else terminal
+    m4.require(
+        code == f"{runs}|{outs}|{mask}",
+        "전이 코드 정규 형식 오류",
+    )
+
+    return runs, outs, mask
 
 
 def hypothetical_post(
     pre: m4.State,
     code: str,
 ) -> tuple[m4.State, int | None]:
-    """현재 사전 상태에 Train에서 관측한 가상 전이를 적용한다."""
-    runs, outs, mask, terminal = decode_transition(code)
+    """물리 전이를 적용하고 현재 시즌의 정상 종료값을 계산한다."""
+    runs, outs, mask = decode_transition(code)
 
     post = replace(
         pre,
@@ -153,11 +179,8 @@ def hypothetical_post(
 
     m4.validate_pair(pre, post)
 
-    if terminal is not None:
-        m4.require(
-            terminal == int(post.difference > 0),
-            "가상 종료 결과와 점수차 불일치",
-        )
+    # 실제 과거 경기의 종료 결과가 아닌 현재 시즌 규칙을 사용한다.
+    terminal = m4.normal_final_result(pre, post)
 
     return post, terminal
 
@@ -169,7 +192,7 @@ def expected_absolute_wpa(
     *,
     details: bool = False,
 ) -> tuple[float | None, int, list[dict[str, object]]]:
-    """실제 결과를 사용하지 않고 가능한 전이의 절대 WPA를 평균한다."""
+    """사전 상태와 학습된 전이 확률만으로 기대 절대 WPA를 계산한다."""
     if pre.phase != "pre" or pre.outs == 3:
         return None, 0, []
 
@@ -180,20 +203,21 @@ def expected_absolute_wpa(
         return None, support, []
 
     before = m4.predict_win(predictor, pre)[0]
+
     weighted_values = []
     distribution = []
 
     for code, n in sorted(outcomes.items()):
-        post, terminal = hypothetical_post(pre, code)
+        post, rule_final = hypothetical_post(pre, code)
 
         probability = n / support
 
-        # terminal은 현재 타석의 실제 종료 정보가 아니라
-        # Train에서 관측된 가상 전이의 일부다.
+        # 규칙상 확정되는 가상 종료는 해당 결과를 사용하고,
+        # 계속되는 가상 상태는 운영 승리 예측기로 계산한다.
         after = m4.predict_win(
             predictor,
             post,
-            terminal,
+            rule_final,
         )[0]
 
         change = after - before
@@ -201,13 +225,15 @@ def expected_absolute_wpa(
         weighted_values.append(probability * abs(change))
 
         if details:
-            runs, outs, mask, _ = decode_transition(code)
+            runs, outs, mask = decode_transition(code)
 
             distribution.append({
                 "actual_runs_if_transition": runs,
                 "post_outs": outs,
                 "post_base_mask": mask,
-                "historical_final_win": terminal,
+                "normal_rule_final": rule_final is not None,
+                "normal_rule_final_win": rule_final,
+                "season_inning_limit": m4.inning_limit(pre.season),
                 "count": n,
                 "probability": probability,
                 "post_win_probability": after,
@@ -234,7 +260,7 @@ def fit_reference(
     transitions: TransitionTable,
     pairs: Sequence[Pair],
 ) -> ImportanceReference:
-    """지원되는 Train 사전 상태의 기대 절대 WPA를 참조 평균으로 삼는다."""
+    """지원되는 Train 사전 상태의 기대 절대 WPA 평균을 구한다."""
     m4.require(
         all(pair.split == "train" for pair in pairs),
         "상황 중요도 참조 평균에 비학습 타석 유입",
@@ -258,7 +284,10 @@ def fit_reference(
         supported += n
         weighted_values.append(expected * n)
 
-    mean = fsum(weighted_values) / supported if supported else None
+    mean = (
+        fsum(weighted_values) / supported
+        if supported else None
+    )
 
     return {
         "mean": mean,
@@ -273,7 +302,7 @@ def importance(
     *,
     details: bool = True,
 ) -> dict[str, object]:
-    """상황 중요도 및 적용 가능 여부를 계산한다."""
+    """상황 중요도와 지원 범위를 반환한다."""
     if pre.phase != "pre":
         return {
             "value": None,
@@ -301,13 +330,13 @@ def importance(
     elif reference is None or reference <= 0:
         reason = "unsupported_reference_mean"
 
-    value = (
+    result = (
         None if reason is not None
         else expected / reference
     )
 
     return {
-        "value": value,
+        "value": result,
         "reason": reason,
         "support": support,
         "expected_absolute_wpa": expected,
@@ -343,7 +372,7 @@ def state_value(
     *,
     with_importance: bool = True,
 ) -> dict[str, object]:
-    """관측 상태에서 승리 확률과 잔여 기대득점을 제공한다."""
+    """검증된 내부 관측 상태에서 승리 확률과 RE를 반환한다."""
     final = m4.final_result(state, evidence)
 
     probability, win_method, win_support = m4.predict_win(
@@ -361,6 +390,8 @@ def state_value(
     result = {
         "perspective_team_id": state.perspective_team_id,
         "phase": state.phase,
+        "season_inning_limit": m4.inning_limit(state.season),
+        "maximum_future_halves": m4.maximum_future_halves(state),
         "win_probability": probability,
         "win_method": win_method,
         "win_support": win_support,
@@ -386,18 +417,26 @@ def plate_value(
     *,
     with_importance: bool = True,
 ) -> dict[str, object]:
-    """동일 관점에서 관측 타석의 WPA와 기대득점 가치를 계산한다."""
+    """검증된 내부 타석의 동일 관점 WPA와 득점 가치를 계산한다."""
     actual_runs = m4.validate_pair(pre, post)
 
     before = state_value(
-        asset, pre, with_importance=False
+        asset,
+        pre,
+        with_importance=False,
     )
 
     after = state_value(
-        asset, post, evidence, with_importance=False
+        asset,
+        post,
+        evidence,
+        with_importance=False,
     )
 
-    wpa = after["win_probability"] - before["win_probability"]
+    wpa = (
+        after["win_probability"]
+        - before["win_probability"]
+    )
 
     change = (
         after["remaining_expected_runs"]
@@ -415,7 +454,7 @@ def plate_value(
         "observed_walkoff_pattern": (
             evidence is not None
             and post.half == "bot"
-            and post.inning >= 9
+            and post.inning >= m4.REGULATION_INNINGS
             and pre.difference <= 0
             and post.difference > 0
         ),
@@ -427,11 +466,125 @@ def plate_value(
     return result
 
 
-def pair_input(pair: Pair) -> dict[str, object]:
-    """정답 값을 포함하지 않은 독립 추론용 입력을 만든다."""
+def validate_identity(
+    game_id: object,
+    pa_number: object,
+) -> tuple[str, int]:
+    """관측 경기 및 타석의 감사 식별자를 확인한다."""
+    m4.require(
+        isinstance(game_id, str)
+        and bool(game_id)
+        and game_id == game_id.strip(),
+        "경기 식별자 오류",
+    )
+
+    number = m4.count(pa_number, "pa_number")
+
+    m4.require(number > 0, "타석 번호는 양의 정수여야 합니다.")
+
+    return game_id, number
+
+
+def validate_evidence_identity(
+    game_id: str,
+    pa_number: int,
+    evidence: m4.FinalEvidence | None,
+) -> None:
+    """종료 근거가 입력 경기와 동일 타석에 속하는지 검사한다."""
+    if evidence is None:
+        return
+
+    m4.require(
+        evidence.game_id == game_id
+        and evidence.pa_number == pa_number
+        and evidence.last_pa == pa_number,
+        "입력 경기·타석과 공식 종료 근거 불일치",
+    )
+
+
+def boundary_input(
+    game_id: str,
+    pa_number: int,
+    state: m4.State,
+) -> BoundaryInput:
+    """모델 특징과 감사 식별자를 분리한 입력을 구성한다."""
+    validate_identity(game_id, pa_number)
+
     return {
-        "pre": asdict(pair.pre.state),
-        "post": asdict(pair.post.state),
+        "game_id": game_id,
+        "pa_number": pa_number,
+        "state": asdict(state),
+    }
+
+
+def parse_boundary(
+    raw: object,
+) -> tuple[str, int, m4.State]:
+    """독립 추론용 관측 경계의 식별자와 상태를 복원한다."""
+    m4.require(
+        isinstance(raw, Mapping)
+        and set(raw) == {"game_id", "pa_number", "state"},
+        "관측 경계 입력 구조 오류",
+    )
+
+    game_id, number = validate_identity(
+        raw["game_id"],
+        raw["pa_number"],
+    )
+
+    m4.require(
+        isinstance(raw["state"], Mapping),
+        "상태 입력 타입 오류",
+    )
+
+    return (
+        game_id,
+        number,
+        m4.parse_state(raw["state"]),
+    )
+
+
+def pair_input(pair: Pair) -> dict[str, object]:
+    """검증된 타석 쌍을 독립 추론 계약으로 변환한다."""
+    prefix, separator, suffix = pair.pair_id.rpartition(":")
+
+    m4.require(
+        separator == ":"
+        and prefix == pair.game_id
+        and suffix.isascii()
+        and suffix.isdecimal(),
+        "자료 타석 식별자 형식 오류",
+    )
+
+    game_id, number = validate_identity(
+        pair.game_id,
+        int(suffix),
+    )
+
+    m4.require(
+        pair.pair_id == f"{game_id}:{number}",
+        "자료 타석 식별자 정규 형식 오류",
+    )
+
+    validate_evidence_identity(
+        game_id,
+        number,
+        pair.final,
+    )
+
+    m4.validate_pair(pair.pre.state, pair.post.state)
+
+    return {
+        "pre": boundary_input(
+            game_id,
+            number,
+            pair.pre.state,
+        ),
+        "post": boundary_input(
+            game_id,
+            number,
+            pair.post.state,
+        ),
         "final": asdict(pair.final) if pair.final else None,
     }
 
@@ -440,7 +593,7 @@ def predict(
     asset: ValueModel,
     raw: Mapping[str, object],
 ) -> dict[str, object]:
-    """단일 상태 또는 관측 타석 쌍 JSON 입력을 처리한다."""
+    """감사 식별자를 확인한 단일 상태 또는 타석 쌍을 평가한다."""
     keys = set(raw)
 
     m4.require(
@@ -461,30 +614,59 @@ def predict(
     evidence = m4.parse_final(evidence_raw)
 
     if "state" in raw:
-        m4.require(isinstance(raw["state"], Mapping), "상태 입력 오류")
+        game_id, number, state = parse_boundary(
+            raw["state"],
+        )
 
-        return state_value(
-            asset,
-            m4.parse_state(raw["state"]),
+        validate_evidence_identity(
+            game_id,
+            number,
             evidence,
         )
 
+        result = state_value(
+            asset,
+            state,
+            evidence,
+        )
+
+        return {
+            "game_id": game_id,
+            "pa_number": number,
+            **result,
+        }
+
+    pre_game, pre_number, pre = parse_boundary(raw["pre"])
+    post_game, post_number, post = parse_boundary(raw["post"])
+
     m4.require(
-        isinstance(raw["pre"], Mapping)
-        and isinstance(raw["post"], Mapping),
-        "전후 상태 입력 오류",
+        pre_game == post_game
+        and pre_number == post_number,
+        "전후 상태의 경기 또는 타석 식별자 불일치",
     )
 
-    return plate_value(
-        asset,
-        m4.parse_state(raw["pre"]),
-        m4.parse_state(raw["post"]),
+    validate_evidence_identity(
+        post_game,
+        post_number,
         evidence,
     )
 
+    result = plate_value(
+        asset,
+        pre,
+        post,
+        evidence,
+    )
+
+    return {
+        "game_id": pre_game,
+        "pa_number": pre_number,
+        **result,
+    }
+
 
 def validate_asset(asset: ValueModel) -> None:
-    """복원된 분류기·RE·전이 분포·참조 평균을 확인한다."""
+    """분류기, RE, 물리 전이 및 참조 평균을 검사한다."""
     m4.require(
         set(asset) == {
             "predictor", "re_table",
@@ -508,12 +690,15 @@ def validate_asset(asset: ValueModel) -> None:
     for key, outcomes in transitions.items():
         parts = key.split("|")
 
-        m4.require(len(parts) == 5, "사전 상태 키 형식 오류")
+        m4.require(
+            len(parts) == 5,
+            "사전 상태 키 형식 오류",
+        )
 
         inning, half, difference, outs, mask = parts
 
         m4.require(
-            int(inning) >= 1
+            1 <= int(inning) <= m4.REFERENCE_INNING_LIMIT
             and half in ("top", "bot")
             and 0 <= int(outs) <= 2
             and 0 <= int(mask) <= 7
@@ -525,14 +710,18 @@ def validate_asset(asset: ValueModel) -> None:
         int(difference)
 
         for code, n in outcomes.items():
-            _, after_outs, _, _ = decode_transition(code)
+            _, after_outs, _ = decode_transition(code)
 
             m4.require(
                 after_outs >= int(outs),
                 "저장 전이에서 아웃 감소",
             )
 
-            m4.require(m4.count(n, "transition_count") > 0, "전이 건수 오류")
+            m4.require(
+                m4.count(n, "transition_count") > 0,
+                "전이 건수 오류",
+            )
+
             transition_total += n
 
     reference = asset["reference"]
@@ -542,12 +731,21 @@ def validate_asset(asset: ValueModel) -> None:
         "상황 중요도 참조 구조 오류",
     )
 
-    supported = m4.count(reference["supported"], "supported")
-    total = m4.count(reference["total"], "total")
+    supported = m4.count(
+        reference["supported"],
+        "supported",
+    )
+
+    total = m4.count(
+        reference["total"],
+        "total",
+    )
+
     mean = reference["mean"]
 
     m4.require(
-        total == transition_total and total > 0
+        total == transition_total
+        and total > 0
         and 0 <= supported <= total,
         "상황 중요도 참조 표본 수 오류",
     )
@@ -564,7 +762,11 @@ def validate_asset(asset: ValueModel) -> None:
     )
 
     if supported == 0:
-        m4.require(mean is None, "미지원 참조 평균 오류")
+        m4.require(
+            mean is None,
+            "미지원 참조 평균 오류",
+        )
+
     else:
         m4.require(
             type(mean) in (int, float)
@@ -572,3 +774,59 @@ def validate_asset(asset: ValueModel) -> None:
             and 0 <= mean <= 1,
             "상황 중요도 참조 평균 범위 오류",
         )
+
+
+def rule_examples(
+    state: m4.State,
+) -> list[dict[str, object]]:
+    """동일 물리 전이에 대한 두 시즌의 종료 차이를 재현한다.
+
+    실제 경기 평가 표본이 아니라 규칙 검증용 합성 상태다.
+    """
+    examples = []
+
+    for season, expected in (
+        (2024, None),
+        (2025, 0),
+    ):
+        pre = replace(
+            state,
+            season=season,
+            inning=11,
+            half="bot",
+            phase="pre",
+            perspective_team_id=state.home_team_id,
+            home_score=3,
+            away_score=3,
+            outs=2,
+            on_first=0,
+            on_second=0,
+            on_third=0,
+        )
+
+        pre = m4.parse_state(asdict(pre))
+
+        post, final = hypothetical_post(
+            pre,
+            "0|3|0",
+        )
+
+        m4.require(
+            final == expected,
+            f"시즌별 가상 종료 규칙 불일치: {season}",
+        )
+
+        examples.append({
+            "case": "eleventh_bottom_tie_three_outs",
+            "synthetic": True,
+            "season": season,
+            "maximum_inning": m4.inning_limit(season),
+            "pre": asdict(pre),
+            "post": asdict(post),
+            "transition": "0|3|0",
+            "normal_rule_final": final is not None,
+            "normal_rule_final_win": final,
+            "expected_final_win": expected,
+        })
+
+    return examples
