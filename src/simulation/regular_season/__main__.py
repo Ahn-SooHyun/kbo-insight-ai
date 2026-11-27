@@ -86,8 +86,8 @@ def run(
 ) -> dict[str, object]:
     """인수 자료 검증부터 반복별 출력 저장까지 실행한다."""
 
-    if iterations <= 0:
-        raise ValueError("반복 횟수는 양수여야 합니다.")
+    if type(iterations) is not int or iterations <= 0:
+        raise ValueError("반복 횟수는 양의 정수여야 합니다.")
 
     cutoff = parse_cutoff(as_of, season)
 
@@ -350,7 +350,10 @@ def run(
         simulation_id,
     )
 
-    return {
+    # 반복 횟수와 반복별 파일 경로는 의미와 타입이 다르다.
+    # 산출물 경로 딕셔너리를 그대로 병합하지 않고 명시적으로
+    # 반환하여 기존 실행 정보가 덮어써지는 문제를 방지한다.
+    result: dict[str, object] = {
         "status": "completed",
         "run_id": simulation_id,
         "season": season,
@@ -362,11 +365,20 @@ def run(
         "missing_games": scenario.metadata["missing_games"],
         "result_dir": str(result_dir),
         "manifest": str(manifest_path),
-        **{
-            name: str(path)
-            for name, path in output_paths.items()
-        },
+        "scenario": str(scenario_path),
+        "summary": str(summary_path),
+        "iterations_path": str(iterations_path),
     }
+
+    if "diagnostic" in output_paths:
+        result["diagnostic"] = str(
+            output_paths["diagnostic"]
+        )
+        result["baseline_iterations"] = str(
+            output_paths["baseline_iterations"]
+        )
+
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:

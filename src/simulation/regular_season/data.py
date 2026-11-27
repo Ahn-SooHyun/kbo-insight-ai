@@ -1,6 +1,5 @@
 """인수 자료·일정·저장 모델의 무결성과 기준 시점 입력을 검사한다."""
 
-from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta, timezone
