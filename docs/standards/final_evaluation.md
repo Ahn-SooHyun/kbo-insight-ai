@@ -1,20 +1,22 @@
 # 고정 모델 2026 최종 평가·누수 검증
 
-**KBO Insight AI · 기술 계약·고정 평가 실행**
-
-| 항목           | 내용                                                                                                                           |
+| 항목           | 기준                                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 문서 역할      | 기술 계약·고정 평가 실행                                                                                                       |
 | 적용 범위      | 고정 예측기 6개, 최종 Test, 누수 감사 및 지표 검산                                                                             |
 | 확인 기준일    | 2026-11-29 (KST)                                                                                                               |
 | 저장소 경로    | `docs/standards/final_evaluation.md`                                                                                           |
-| 인수 소스 기준 | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5)                     |
+| 기준 소스      | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5)                     |
 | 연관 작업      | [#34](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/34), [#40](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/40) |
-| 자료 이용      | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                                               |
+| 자료 이용 범위 | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                                               |
 
-**판본 보존:** [개정 전 기준 문서 원문](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/ea4ef457fa35dbc37525cd97586a9f51543e31c5/docs/standards/final_evaluation.md)은 역사적 실험·명세·검증의 원본 근거다. 개정 문서는 이전 실행 명세의 파일 지문을 대체하지 않는다.
+## 요약
 
-## 찾아보기
+운영 예측기 6개를 2026년 정규시즌 고정 Test에서 평가한 기록과 누수 감사 절차다. 선정과 보정은 개발 단계에 한정하고, 평가 실행과 저장 결과의 검산을 구분한다.
+
+[기준 소스의 이 문서](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/ea4ef457fa35dbc37525cd97586a9f51543e31c5/docs/standards/final_evaluation.md)에서 역사적 서술과 실행 이력을 확인할 수 있다. 과거 실행의 지문은 당시 기록과 일치하는 별도 판본을 따른다.
+
+## 목차
 
 - [1. 목적·지원 범위](#overview)
 - [2. 자료·분할 및 정보 경계](#data)
@@ -96,6 +98,17 @@ M1·M2의 Log loss 수치 절단, M4 확률 경계, M5 양의 확률 요구 및 
 
 강의 시각은 [선행 확인 기록](../planning/development_workflow.md#lecture-methods)에서 인수했다. 과제 가이드 4쪽의 Baseline·성능 비교·결론 원리를 적용한다. 이 문서 개정에서 전체 강의 원문을 새로 전수 확인하지 않았으며, 강의 외 확장은 확인 범위의 구분이다.
 
+### 6.1 평가 원리와 감사 절차의 대응
+
+| 단계 | 적용한 원리                                                                                                 | 여기서 확보할 증거                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 준비 | 보지 않은 자료에서 평가한다는 강의 원리를 운영 자산 고정으로 구체화한다.                                    | 준비 시점의 모델·자료·코드·문서 지문과 기존 Train 기준의 동일성을 기록한다.        |
+| 예측 | 프로젝트의 SQLite 권한·열 허용 목록과 결과 저장 순서로 입력과 정답을 분리한다.                              | 허용 입력만 조회한 기록, 고정 예측 행, 순서와 입력의 대응 및 조회 제한을 확인한다. |
+| 채점 | NLL을 확률 비교에 쓰며, 제곱오차 개념을 Brier와 RMSE에 목적별로 적용한다. 점예측·분포·확률의 단위가 다르다. | 정답 연결 후 모델마다 유효 행, 제외 수, 고정 범주와 지표 결과를 확인한다.          |
+| 검산 | 고정 예측·정답·기준으로 점수를 재계산하여 집계와 재현을 분리 확인한다.                                      | 동일 지표·분모·지문의 일치와 새로운 모델 추론의 실행 여부를 독립 기록한다.         |
+
+M1의 CRPS, M2·M5의 범주 지표, M3의 마스크별 오차, M4의 상태 구간을 함께 읽는다. 낮은 평균 Log loss와 높은 ECE는 동시에 관찰될 수 있다. 다중분류 Brier는 범주별 제곱오차의 합을 표본 평균하므로 범주별 평균을 사용하는 다른 정의와 직접 비교할 수 없다. 자세한 적용 범위는 [채점·설명·인수 원리](../planning/development_workflow.md#lecture-validation-evidence)를 따른다.
+
 <a id="evaluation"></a>
 
 ## 7. 평가 결과 및 해석
@@ -141,17 +154,34 @@ M1·M2의 Log loss 수치 절단, M4 확률 경계, M5 양의 확률 요구 및 
 
 ## 10. 실행 명령
 
-프로젝트 루트에서 지정된 Python 3.12 환경을 사용한다. 아래 경로는 검증한 Windows 환경의 예시이며 다른 위치에서는 실제 절대 경로를 사용한다. 다음 명령의 매니페스트 경로 및 지문은 실제 `prepare` 출력으로, 결과 지문은 실제 `run` 출력으로 대체한다. 명령은 순서대로 실행하고 각각 Exit 0과 실제 완료 상태를 확인한다. 기존 명세의 재검증과 현재 판본의 신규 실행을 구별하며 다음 절의 판본 경계를 먼저 확인한다.
+프로젝트 루트에서 지정된 Python 3.12 환경을 사용한다. 아래는 현재 소스에서 새 평가 명세를 만들고 검산까지 진행하는 Windows PowerShell 예시다. 소스와 승인 자산을 준비하고 [8절의 판본 경계](#reproducibility)를 먼저 확인한다. 매니페스트 경로·지문과 결과 지문은 실제 JSON 출력에서 얻는다. 기존 실행의 검산만 필요할 때는 해당 역사 판본의 승인된 명세와 지문을 확인한 뒤 `verify`에 전달한다. 현재 판본의 새 전체 실행은 이번 문서 검토에서 수행하지 않았다.
 
 ```powershell
-$python = "D:/Programming/kbo-insight-ai/.venv/Scripts/python.exe"
-$root = "D:/Programming/kbo-insight-ai"
-Set-Location $root
-& $python -m unittest discover -s tests -p test_final_evaluation.py -v
-& $python -m src.evaluation.final_evaluation --project-root $root prepare
-& $python -m src.evaluation.final_evaluation --project-root $root run --manifest $manifestPath --manifest-sha256 $manifestHash
-& $python -m src.evaluation.final_evaluation --project-root $root verify --manifest $manifestPath --manifest-sha256 $manifestHash --result-sha256 $resultHash
-& $python -m unittest discover -s tests
+Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
+$root = (Get-Location).Path
+$python = Join-Path $root '.venv/Scripts/python.exe'
+
+& $python -X utf8 -B -m unittest discover -s tests -p 'test_final_evaluation.py' -v
+if ($LASTEXITCODE -ne 0) { throw '최종 평가 전용 테스트 실패' }
+
+$prepareOutput = & $python -X utf8 -B -m src.evaluation.final_evaluation --project-root $root prepare
+if ($LASTEXITCODE -ne 0) { throw '최종 평가 명세 준비 실패' }
+$prepared = ($prepareOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop
+if ($prepared.status -ne 'frozen' -or $prepared.asset_count -ne 6) { throw '고정 명세 또는 운영 자산 수 불일치' }
+
+$runOutput = & $python -X utf8 -B -m src.evaluation.final_evaluation --project-root $root run --manifest $prepared.manifest --manifest-sha256 $prepared.manifest_sha256
+if ($LASTEXITCODE -ne 0) { throw '최종 평가 실행 실패' }
+$evaluation = ($runOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop
+if ($evaluation.status -ne 'completed' -or $evaluation.completed_models -ne 6) { throw '최종 평가 완료 범위 불일치' }
+
+$verifyOutput = & $python -X utf8 -B -m src.evaluation.final_evaluation --project-root $root verify --manifest $prepared.manifest --manifest-sha256 $prepared.manifest_sha256 --result-sha256 $evaluation.result_sha256
+if ($LASTEXITCODE -ne 0) { throw '저장 결과 검산 실패' }
+$verification = ($verifyOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop
+if ($verification.status -ne 'verified' -or $verification.matched_models -ne 6) { throw '저장 결과 일치 범위 오류' }
+$verification
+
+& $python -X utf8 -B -m unittest discover -s tests
+if ($LASTEXITCODE -ne 0) { throw '전체 회귀 실패' }
 ```
 
 사전 검사 또는 명세 검사가 실패하면 실제 평가로 진행하지 않는다. 평가 실패는 완료로 기록하지 않으며, 최초 평가에서 정책을 변경해야 하는 경우 원래 명세·결과를 보존하고 독립 검증의 지위를 다시 판단한다.

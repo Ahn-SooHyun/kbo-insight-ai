@@ -1,18 +1,22 @@
 # 실행 및 저장 자산 인수 안내
 
-**KBO Insight AI · 운영 실행·재현 인수**
-
-| 항목           | 내용                                                                                                                           |
+| 항목           | 기준                                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 문서 역할      | 운영 실행·재현 인수                                                                                                            |
 | 적용 범위      | 설치, 저장 자산, 예측, 판본, 검증 및 오류 대응                                                                                 |
 | 확인 기준일    | 2026-11-29 (KST)                                                                                                               |
 | 저장소 경로    | `docs/standards/execution_handover.md`                                                                                         |
-| 인수 소스 기준 | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5)                     |
+| 기준 소스      | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5)                     |
 | 연관 작업      | [#40](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/40), [#41](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/41) |
-| 자료 이용      | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                                               |
+| 자료 이용 범위 | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                                               |
 
-## 찾아보기
+## 요약
+
+잠금 설치 후 저장 예측기 6개와 승인된 로컬 자산의 계보를 확인한다. 먼저 저장 M1의 대표 추론을 비교하고, 목적에 따라 시즌 결과와 고정 명세를 검증한다.
+
+기준 소스에는 이 경로의 문서가 없다. 검증 당시의 기재와 실행은 [새 환경 재실행 검증 #40](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/40) 및 7절에서 확인한다.
+
+## 목차
 
 - [1. 목적·실행 전제](#overview)
 - [2. 자료·자산 계보](#data)
@@ -23,6 +27,7 @@
 - [7. 검증 증거와 완료 이력](#evaluation)
 - [8. 재현·오류 대응](#reproducibility)
 - [9. 한계·인수 확인](#limitations)
+- [10. 실행 명령](#commands)
 
 <a id="overview"></a>
 
@@ -33,26 +38,7 @@
 3. 설치와 `check` 성공만으로 자료·모델의 존재나 정상 예측이 보장되지는 않는다. 다음 절에 따라 승인된 기존 자산을 확보한다. 예측에 필요한 저장 모델과 대표 입력만 준비하는 경우에는 원본 수집이나 학습을 하지 않는다.
 4. 독립 추론 예제를 실행하고 기준 출력과 비교한다. 시즌 전망이나 종합 검증은 추가 자료가 필요하므로 해당 실행 계약으로 진행한다.
 
-### 기본 확인 (Windows PowerShell)
-
-아래 예시의 루트를 실제 준비한 소스 및 자산 위치로 바꾼다. 설치가 끝난 같은 가상환경을 사용한다. 모든 정상 명령은 Exit 0이어야 한다.
-
-```powershell
-$root = 'D:/Programming/kbo-insight-ai'
-Set-Location -LiteralPath $root
-$py = Join-Path $root '.venv/Scripts/python.exe'
-$cli = Join-Path $root '.venv/Scripts/kbo-insight.exe'
-uv pip check --python $py
-if ($LASTEXITCODE -ne 0) { throw '의존성 검사 실패' }
-& $py -X utf8 -B -m src --help
-if ($LASTEXITCODE -ne 0) { throw '모듈 도움말 실패' }
-& $py -X utf8 -B -m src --project-root $root check
-if ($LASTEXITCODE -ne 0) { throw '설정 확인 실패' }
-& $cli --project-root $root check
-if ($LASTEXITCODE -ne 0) { throw '설치 CLI 확인 실패' }
-```
-
-설치 EXE가 조직의 Application Control 정책으로 차단되는 환경에서는 허용된 동일 가상환경의 `python -m src` 진입점을 사용한다. 보안 정책을 해제하지 않는다. Python 실행 자체가 차단되면 관리자 또는 해당 정책 담당자에게 문의한다.
+기본 확인 명령과 정책상 설치 EXE가 차단될 때의 조치는 [10절](#commands)에 있다.
 
 <a id="data"></a>
 
@@ -89,26 +75,7 @@ Git 소스와 별도 승인 자산은 구분한다. 소스만 받아서는 아�
 | M4 (`m4`)      | `52df3aae7b45406790165d4c871614b7` | [경기 상황 가치](game_state_value.md#commands)   |
 | M5 (`m5`)      | `c06c10d5d90c4d4ebefee2a848c92f26` | [다음 투구](pitch_outcome.md#commands)           |
 
-### M1 대표 예측 (재학습 없음)
-
-앞 절의 `$root`, `$py`를 사용한다. 이 명령은 저장 모델과 입력을 읽어 stdout으로 예측 JSON을 반환한다. 저장된 기준 출력은 읽기 전용으로 비교하며 덮어쓰지 않는다.
-
-```powershell
-$id = '0d9433b8044e48e5a4d21bbdb9b432e5'
-$asset = Join-Path $root "models/m1/$id/model.json"
-$inputPath = Join-Path $root "results/m1/$id/example_input.json"
-$expected = Join-Path $root "results/m1/$id/example_prediction.json"
-foreach ($path in @($asset, $inputPath, $expected)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "필수 파일 누락: $path" }
-}
-$prediction = & $py -X utf8 -B -m src.models.game_outcome --project-root $root predict --asset $asset --input $inputPath
-if ($LASTEXITCODE -ne 0) { throw 'M1 예측 실패' }
-($prediction -join "`n") | & $py -X utf8 -B -c 'import json, sys; from pathlib import Path; expected = json.loads(Path(sys.argv[1]).read_bytes()); sys.exit(0 if json.load(sys.stdin) == expected else 1)' $expected
-if ($LASTEXITCODE -ne 0) { throw '기준 출력 비교 실패' }
-($prediction -join "`n") | ConvertFrom-Json
-```
-
-Exit 0과 기준 JSON의 구조·값 일치를 확인한다. 신규 실제 경기 예측 시에는 기존 대표 입력의 팀·날짜만 임의 치환하지 말고 M1의 예측 시점과 Feature 계약에 맞는 입력을 준비한다. M2/M4/M5의 `verify`, M3의 `inspect`, M5/M3의 공식 비교 및 M3 일반/합성 종료 입력은 각 기술 문서에서 확인한다. 모델마다 입력·출력 계약이 다르므로 M1 비교 방법을 모든 모델에 강제하지 않는다.
+대표 추론 명령은 [10절](#commands)에 있다. Exit 0과 기준 JSON의 구조 및 값 일치를 확인한다. 신규 실제 경기 예측 시에는 기존 대표 입력의 팀·날짜만 임의 치환하지 말고 M1의 예측 시점과 Feature 계약에 맞는 입력을 준비한다. M2/M4/M5의 `verify`, M3의 `inspect`, M5/M3의 공식 비교 및 M3 일반/합성 종료 입력은 각 기술 문서에서 확인한다. 모델마다 입력·출력 계약이 다르므로 M1 비교 방법을 모든 모델에 강제하지 않는다.
 
 ### 현재 저장 파일 지문과 역사 기록
 
@@ -162,17 +129,30 @@ M5의 개발 당시 문서 지문 `16b44b1e1814410e0b85f0045b8132ffa01f396130e7b
 
 강의 출처 및 시각은 [개발 흐름의 강의 원리 기록](../planning/development_workflow.md#lecture-methods)을 따른다. 확인한 강의 발췌에서 같은 상세 재현 절차를 확인하지 못했으므로 프로젝트 확장으로 구분한다. 전체 강의에서의 부재는 단정하지 않는다.
 
+### 6.1 동일한 조건으로 재현하는 원리
+
+| 확인 항목   | 실제 시험                                                       | 동일성이 뜻하는 범위                        |
+| ----------- | --------------------------------------------------------------- | ------------------------------------------- |
+| 설치와 CLI  | 잠금 설치, 두 진입점, 명시 루트, 외부 작업 위치와 누락 루트     | 해당 Windows 사본에서의 설치·초기 설정 계약 |
+| 입력과 판본 | 저장 모델 6개, 입력 JSON, 기준 출력 및 모델·평가 파일/내부 지문 | 인수 지정 자산과 비교 결과의 일치           |
+| 계산        | 대표 추론 8건, 시즌 파일 4쌍, 저장 지표 6개, 설명 배경 3개      | 지정 입력과 지표를 독립 계산해 비교한 범위  |
+| 저장 상태   | 보호 목록 458개 전후 비교 및 양쪽 기준 파일 11개 대조           | 명시한 원천·설정·DB·모델의 보존             |
+
+강의의 공정 비교 원리는 동일 조건 설정에 활용했다. 잠금 설치, 자산의 파일 지문, 분리 사본과 불변 자산 보호는 확인한 강의 발췌에서 동일 세부 절차를 찾지 못한 프로젝트 확장이다. [공통 강의 적용 기록](../planning/development_workflow.md#lecture-validation-evidence)을 참조한다.
+
 <a id="evaluation"></a>
 
 ## 7. 검증 증거와 완료 이력
 
-| 작업                                                                                         | 병합·종료 확인                                                                        |
+| 작업                                                                                         | 병합·종료 근거                                                                        |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | [예상 선발·팀 전력·일정 난이도 #29](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/29) | [PR #33](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/33), `53c2d41`, 완료 종료 |
 | [2026 최종 평가 #34](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/34)                | [PR #37](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/37), `11f996b`, 완료 종료 |
 | [시즌 전망·보조 분석 종합 검증 #35](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/35) | [PR #38](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/38), `c5ff798`, 완료 종료 |
 | [예측 설명 #36](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/36)                     | [PR #39](https://github.com/Ahn-SooHyun/kbo-insight-ai/pull/39), `ea4ef45`, 완료 종료 |
 | [새 환경 재실행 검증 #40](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/40)           | 저장소 변경 없음, 기술 수용, 2026-11-29 01:08:59 KST 완료 종료                        |
+
+위 병합과 완료 종료는 링크의 원격 상태에서 확인했다. 아래 실행·회귀 수치는 #40의 사용자 실행 보고와 수용 기록에서 인수했다.
 
 #40은 동일 Windows 장비의 분리 작업 사본과 신규 가상환경에서 다음을 확인했다.
 
@@ -208,3 +188,49 @@ M5의 개발 당시 문서 지문 `16b44b1e1814410e0b85f0045b8132ffa01f396130e7b
 인수자는 먼저 `check`의 루트 및 경로, Python 실행 위치, 모델 ID, 입력 계약, 저장 기준 출력, 실제 종료 코드와 결과 상태를 확인한다. 자산 미제공이면 임의 생성·재수집으로 보완하지 않는다. 새 장비·Linux·다른 보안 정책·오프라인 설치, 과거 판본의 전체 CLI 및 현 판본의 신규 전체 평가 실행은 별도 검증 대상이다. 기존 기록을 완료로 소급 변경하지 않는다.
 
 [README](../../README.md) · [공통 계약](project_contract.md) · [개발 흐름](../planning/development_workflow.md)
+
+<a id="commands"></a>
+
+## 10. 실행 명령
+
+### 10.1 기본 확인 (Windows PowerShell)
+
+아래 예시의 루트를 실제 준비한 소스 및 자산 위치로 바꾼다. 설치가 끝난 같은 가상환경을 사용한다. 모든 정상 명령은 Exit 0이어야 한다.
+
+```powershell
+$root = 'D:/Programming/kbo-insight-ai'
+Set-Location -LiteralPath $root
+$py = Join-Path $root '.venv/Scripts/python.exe'
+$cli = Join-Path $root '.venv/Scripts/kbo-insight.exe'
+uv pip check --python $py
+if ($LASTEXITCODE -ne 0) { throw '의존성 검사 실패' }
+& $py -X utf8 -B -m src --help
+if ($LASTEXITCODE -ne 0) { throw '모듈 도움말 실패' }
+& $py -X utf8 -B -m src --project-root $root check
+if ($LASTEXITCODE -ne 0) { throw '설정 확인 실패' }
+& $cli --project-root $root check
+if ($LASTEXITCODE -ne 0) { throw '설치 CLI 확인 실패' }
+```
+
+설치 EXE가 조직의 Application Control 정책으로 차단되는 환경에서는 허용된 동일 가상환경의 `python -m src` 진입점을 사용한다. 보안 정책을 해제하지 않는다. Python 실행 자체가 차단되면 관리자 또는 해당 정책 담당자에게 문의한다.
+
+### 10.2 저장 M1 대표 예측
+
+앞 절의 `$root`, `$py`를 사용한다. 이 명령은 저장 모델과 입력을 읽어 stdout으로 예측 JSON을 반환한다. 저장된 기준 출력은 읽기 전용으로 비교하며 덮어쓰지 않는다.
+
+```powershell
+$id = '0d9433b8044e48e5a4d21bbdb9b432e5'
+$asset = Join-Path $root "models/m1/$id/model.json"
+$inputPath = Join-Path $root "results/m1/$id/example_input.json"
+$expected = Join-Path $root "results/m1/$id/example_prediction.json"
+foreach ($path in @($asset, $inputPath, $expected)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "필수 파일 누락: $path" }
+}
+$prediction = & $py -X utf8 -B -m src.models.game_outcome --project-root $root predict --asset $asset --input $inputPath
+if ($LASTEXITCODE -ne 0) { throw 'M1 예측 실패' }
+($prediction -join "`n") | & $py -X utf8 -B -c 'import json, sys; from pathlib import Path; expected = json.loads(Path(sys.argv[1]).read_bytes()); sys.exit(0 if json.load(sys.stdin) == expected else 1)' $expected
+if ($LASTEXITCODE -ne 0) { throw '기준 출력 비교 실패' }
+($prediction -join "`n") | ConvertFrom-Json
+```
+
+대표 예측의 정상 종료값은 0이다. 비교 프로세스의 종료값 1은 기준 JSON과 구조 또는 값이 다름을 뜻한다. 운영 시험 시에는 [README의 회귀·Git 검사](../../README.md#commands) 순서를 따르고 실제 종료값을 기록한다.

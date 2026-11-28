@@ -1,26 +1,26 @@
 # KBO Insight AI
 
-**KBO Insight AI · 프로젝트 진입점·사용자 실행 안내**
-
-| 항목           | 내용                                                                                                       |
+| 항목           | 기준                                                                                                       |
 | -------------- | ---------------------------------------------------------------------------------------------------------- |
 | 문서 역할      | 프로젝트 진입점·사용자 실행 안내                                                                           |
 | 적용 범위      | 기능, 환경, 자료, 실행, 결과 해석 및 인수                                                                  |
 | 확인 기준일    | 2026-11-29 (KST)                                                                                           |
 | 저장소 경로    | `README.md`                                                                                                |
-| 인수 소스 기준 | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5) |
+| 기준 소스      | [`ea4ef45`](https://github.com/Ahn-SooHyun/kbo-insight-ai/commit/ea4ef457fa35dbc37525cd97586a9f51543e31c5) |
 | 연관 작업      | [#41](https://github.com/Ahn-SooHyun/kbo-insight-ai/issues/41)                                             |
-| 자료 이용      | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                           |
+| 자료 이용 범위 | 승인된 비영리 대학 과제용 로컬 처리 및 내부 평가                                                           |
 
-**판본 보존:** [개정 전 기준 문서 원문](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/ea4ef457fa35dbc37525cd97586a9f51543e31c5/README.md)은 역사적 실험·명세·검증의 원본 근거다. 개정 문서는 이전 실행 명세의 파일 지문을 대체하지 않는다.
+## 요약
 
-**경기에서 시즌까지, 예측 시점·정답의 품질·평가 근거와 재현성을 함께 관리하는 KBO 분석 프로젝트**
+KBO 공개 자료로 경기부터 투구까지 예측하고, 경기 단위 확률을 시즌 전망에 연결한다. 처음 실행할 때는 환경과 입력을 확인한 다음 저장 M1로 대표 예측을 재현한다. 2026년 고정 모델 최종 Test와 2025년 사후 일정 가정 전망은 서로 다른 검증 범위다.
+
+[기준 소스의 이 문서](https://github.com/Ahn-SooHyun/kbo-insight-ai/blob/ea4ef457fa35dbc37525cd97586a9f51543e31c5/README.md)에서 역사적 서술과 실행 이력을 확인할 수 있다. 과거 실행의 지문은 당시 기록과 일치하는 별도 판본을 따른다.
 
 [저장소](https://github.com/Ahn-SooHyun/kbo-insight-ai) · [개발 흐름](docs/planning/development_workflow.md) · [공통 예측·평가 계약](docs/standards/project_contract.md) · [실행 및 저장 자산 인수](docs/standards/execution_handover.md)
 
-> 현재 운영 범위: M1~M5의 저장 예측기 6개를 인수한다. 2026년 고정 모델 최종 Test는 완료 기록이 있지만, 2026년 시즌 전망·보조 분석은 지원하지 않는다. 2025년 시즌 전망은 사후 일정 가정에 따른 시나리오다. 같은 Windows 장비의 분리 사본과 신규 가상환경에서 대표 실행 및 734개 회귀를 확인했다. 새 자료와 모델은 Git 소스만으로 제공되지 않는다.
+**지원 범위.** M1~M5의 저장 예측기 6개를 인수한다. 2026년 고정 모델 최종 Test는 완료 기록이 있지만, 2026년 시즌 전망·보조 분석은 지원하지 않는다. 2025년 시즌 전망은 사후 일정 가정에 따른 시나리오다. 같은 Windows 장비의 분리 사본과 신규 가상환경에서 대표 실행 및 734개 회귀를 확인했다. 새 자료와 모델은 Git 소스만으로 제공되지 않는다.
 
-## 찾아보기
+## 목차
 
 - [1. 프로젝트 개요·기능 지도](#features)
 - [2. 구조·문서 역할](#documents)
@@ -247,6 +247,17 @@ v1.1.0 기준 순위 규칙, 관측 경기 기술통계, 기존 M1을 사용한�
 
 강의 전사에서 확인된 구간을 근거로 적용·원리 응용을 구별한다. 동일 상세 방법을 확인한 강의 발췌에서 찾지 못한 항목은 프로젝트 확장으로 별도 기록하며 전체 수업에서 언급되지 않았다고 단정하지 않는다. 각 기술 문서는 실제 코드·수식·검증·한계를 연결한다. 모델 구현에 사용하지 않은 기법을 사용했다고 기록하지 않는다.
 
+### 6.1 구현을 설명할 때 확인할 근거
+
+| 질문                                                              | 문서에서 확인할 내용                                                                                                 |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 강의와 같은 계산을 어디에 쓰는가                                  | M4의 시그모이드·이진 NLL·경사하강, M2·M5 다항 확률과 NLL을 각 구현과 연결한다.                                       |
+| 같은 원리를 어떻게 변형했는가                                     | M1은 반복 검증을 시즌 순서에 맞췄다. M3 투수는 분기 손실 감소 원리를 관측 마스크가 있는 회귀 트리에 사용했다.        |
+| 강의 발췌에서 동일 상세 기법을 확인하지 못한 실제 구현은 무엇인가 | 결합 득점과 동점 보정, 구조적 0·보정, 상태 전이·부분 식별, 독립 개입 선형 SHAP과 고정 명세 검산을 기능별로 기록한다. |
+| 비교 후보가 최종 운영에 채택됐는가                                | 포아송·이력·L2·계수 평균 등의 후보는 해당 기능의 비교 결과와 채택 상태를 확인한다. 모델 수는 운영 자산만 센다.       |
+
+기법마다 구현 위치, 적용 조건, 개선·악화 지표, 분모, 검증 한계를 [원리에서 구현과 검증까지](docs/planning/development_workflow.md#lecture-implementation-evidence)에서 찾을 수 있다.
+
 <a id="evaluation"></a>
 
 ## 7. 평가·재현 검증 상태
@@ -305,7 +316,7 @@ Train은 2025-01-01 이전, Validation은 2025년, 최종 Test는 2026-01-01 이
 
 ### 10.1 최초 환경 설치
 
-다음은 확인된 Windows PowerShell 명령이다. 경로는 사용자 환경에 맞게 변경한다. 기존 `.venv`가 있다면 새로 만들지 않고 환경·버전을 확인 후 10.2절로 이동한다. 소스 사본과 Python 3.12.15 원본 및 uv 0.13.7을 미리 준비한다.
+다음은 확인된 Windows PowerShell 명령이다. 경로는 사용자 환경에 맞게 변경한다. 기존 `.venv`가 있다면 새로 만들지 않고 환경·버전을 확인 후 10.2절로 이동한다. #40에서 새 환경을 검증한 실제 경로는 `D:/Programming/kbo-insight-ai-repro`이고 아래 명령의 경로는 적용 사본 예시다. 소스 사본과 Python 3.12.15 원본 및 uv 0.13.7을 미리 준비한다.
 
 ```powershell
 Set-Location -LiteralPath 'D:/Programming/kbo-insight-ai'
@@ -345,7 +356,7 @@ if ($LASTEXITCODE -ne 0) { throw '설치 진입점 확인 실패' }
 if ($LASTEXITCODE -ne 0) { throw '설치 진입점 설정 확인 실패' }
 ```
 
-설치 EXE의 실행이 정책상 차단되면 모듈 경로 확인과 구분해 기록한다. `check` 성공 뒤 4절의 승인 자산을 준비한다.
+설치 EXE 실행이 정책상 차단되면 모듈 진입점의 성공과 EXE 차단 상태를 각각 기록한다. 모듈 진입점이 정상이고 예측 자산을 확보했다면 10.3절을 진행할 수 있다. `check` 성공 뒤 4절의 승인 자산을 준비한다.
 
 ### 10.3 저장 M1 대표 추론
 
@@ -376,16 +387,19 @@ if ($LASTEXITCODE -ne 0) { throw '대표 예측 비교 실패' }
 if ($LASTEXITCODE -ne 0) { throw '표준 가공 실패' }
 ```
 
-후속 표준 검사에 실제 새 run ID를 `validate-standard --run-id`로 전달한다. 모델 자료는 실제 검증된 run·verification을 사용해 `src.datasets.model_data --run-id ... --verification-id ... --validation-start 2025-01-01 --test-start 2026-01-01 --observation-end 2026-11-26`으로 생성한다. 기존 명세와 입력 지문을 확인한다. 학습 및 기능별 새 실행은 1.1절의 기술 문서를 따라가며, 최종 Test를 새로운 선택 자료로 사용하지 않는다.
+후속 표준 검사에 실제 새 run ID를 `validate-standard --run-id`로 전달한다. 모델 자료는 실제 검증된 run·verification을 사용해 `src.datasets.model_data --run-id ... --verification-id ... --validation-start 2025-01-01 --test-start 2026-01-01 --observation-end 2026-11-26`으로 생성한다. 기존 명세와 입력 지문을 확인한다. 학습 및 기능별 새 실행은 2.2절에서 연결한 기술 문서를 따라가며, 최종 Test를 새로운 선택 자료로 사용하지 않는다.
 
 ### 10.5 회귀 및 읽기 전용 Git 확인
 
 ```powershell
 & $python -X utf8 -B -m unittest discover -s tests
 if ($LASTEXITCODE -ne 0) { throw '전체 회귀 실패' }
+git --no-optional-locks status --short --branch
+if ($LASTEXITCODE -ne 0) { throw 'Git 상태 확인 실패' }
 git diff --check
 if ($LASTEXITCODE -ne 0) { throw 'Git 형식 검사 실패' }
-git --no-optional-locks status --short --branch
+git diff --name-only
+if ($LASTEXITCODE -ne 0) { throw 'Git 변경 경로 확인 실패' }
 ```
 
-회귀가 stderr 로그를 쓰는 경우 실제 프로세스 종료 코드와 테스트 요약을 확인한다. 현재 기준 문서의 링크 및 각 실행 옵션은 적용 후 다시 검증한다. [실행 및 저장 자산 인수](docs/standards/execution_handover.md)는 동일 조건의 과거 실측 결과와 제한을 관리한다.
+회귀가 stderr 로그를 쓰는 경우 실제 프로세스 종료 코드와 테스트 요약을 확인한다. 적용 후 상대 링크를 열고 가상환경에서 `python -m src --help`와 저장 M1의 `predict --help`를 확인한다. 새로 추가한 파일이 `??`로 표시되면 상태에서 경로를 확인한다. 추적되지 않은 파일은 `git diff --check` 및 `git diff --name-only`의 대상에 자동으로 들어가지 않는다. [실행 및 저장 자산 인수](docs/standards/execution_handover.md)는 동일 조건의 과거 실측 결과와 제한을 관리한다.
