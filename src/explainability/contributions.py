@@ -738,6 +738,124 @@ def explain_m2(
     }
 
 
+def re_evidence(
+    table: m4.StatTable,
+    state: m4.State,
+    confirmed: int | None,
+    expected: tuple[float, str, int | None],
+) -> JsonObject:
+    """RE의 실제 선택 통계 및 후퇴 근거를 복원하고 검산한다.
+
+    Args:
+        table: 고정 Train의 잔여 실득점 통계표.
+        state: 설명 대상 경기 상태.
+        confirmed: 공식 종료 결과. 미확정이면 None.
+        expected: 기존 운영 함수가 반환한 RE, 조회 수준, 지원 수.
+
+    Returns:
+        실제 선택 키, 표본 수, 득점 합, 조회 경로 및 검산 결과.
+
+    Raises:
+        ValueError: 통계 근거와 기존 예측 결과가 일치하지 않는 경우.
+    """
+    if confirmed is not None or state.outs == 3:
+        error = compare(
+            (0.0, "half_ended", None),
+            expected,
+            "M4 종료 RE",
+        )
+
+        return {
+            "status": "deterministic",
+            "reason": (
+                "confirmed_game_final"
+                if confirmed is not None
+                else "three_outs_half_ended"
+            ),
+            "selected_key": None,
+            "selected_entry": None,
+            "selected_support": None,
+            "selected_runs_sum": None,
+            "reconstructed_re": 0.0,
+            "minimum_support": m4.MIN_SUPPORT,
+            "lookup_trace": [],
+            "max_absolute_error": error,
+        }
+
+    trace = []
+
+    # 운영 모델의 조회 순서와 최소 지원 조건을 그대로 사용한다.
+    # 조회 수준과 실제 통계표의 복합 키를 혼동하지 않는다.
+    for key in v4.re_keys(state):
+        entry = table.get(key)
+
+        if entry is None:
+            trace.append({
+                "key": key,
+                "status": "missing",
+                "support": None,
+                "runs_sum": None,
+            })
+
+            continue
+
+        support, runs_sum = entry
+
+        require(
+            type(support) is int
+            and support > 0
+            and type(runs_sum) is int
+            and runs_sum >= 0,
+            f"M4 RE 통계 항목 오류: {key}",
+        )
+
+        if key != "global" and support < m4.MIN_SUPPORT:
+            trace.append({
+                "key": key,
+                "status": "insufficient_support",
+                "support": support,
+                "runs_sum": runs_sum,
+            })
+
+            continue
+
+        level = key.split(":", 1)[0]
+        reconstructed = runs_sum / support
+
+        # 기존 운영 함수의 반환값과 실제 통계 계산을 대조한다.
+        error = compare(
+            (reconstructed, level, support),
+            expected,
+            "M4 RE 선택 통계 검산",
+        )
+
+        trace.append({
+            "key": key,
+            "status": "selected",
+            "support": support,
+            "runs_sum": runs_sum,
+        })
+
+        return {
+            "status": "supported",
+            "reason": (
+                "exact_state_supported"
+                if level == "exact"
+                else "fallback_to_supported_statistics"
+            ),
+            "selected_key": key,
+            "selected_entry": list(entry),
+            "selected_support": support,
+            "selected_runs_sum": runs_sum,
+            "reconstructed_re": reconstructed,
+            "minimum_support": m4.MIN_SUPPORT,
+            "lookup_trace": trace,
+            "max_absolute_error": error,
+        }
+
+    raise ValueError("M4 RE 설명에 필요한 학습 통계 없음")
+
+
 def explain_m4(
     operating: Mapping[str, object],
     row: Mapping[str, object],
@@ -841,8 +959,30 @@ def explain_m4(
         ),
     )
 
-    re_method = evaluated["re_method"]
-    re_entry = operating["re_table"].get(re_method)
+    # 저장 일반 추론의 근거와 공식 종료를 반영한 근거를 분리한다.
+    raw_re_evidence = re_evidence(
+        operating["re_table"],
+        state,
+        None,
+        raw_re,
+    )
+
+    evaluated_re_evidence = re_evidence(
+        operating["re_table"],
+        state,
+        confirmed,
+        (
+            evaluated["remaining_expected_runs"],
+            evaluated["re_method"],
+            evaluated["re_support"],
+        ),
+    )
+
+    error = max(
+        error,
+        raw_re_evidence["max_absolute_error"],
+        evaluated_re_evidence["max_absolute_error"],
+    )
 
     global_re = v4.predict_re(
         operating["re_table"],
@@ -889,7 +1029,14 @@ def explain_m4(
         "evaluated": evaluated,
         "confirmed_final": confirmed is not None,
         "re_lookup_order": v4.re_keys(state),
-        "re_selected_entry": re_entry,
+        "re_selected_key": (
+            evaluated_re_evidence["selected_key"]
+        ),
+        "re_selected_entry": (
+            evaluated_re_evidence["selected_entry"]
+        ),
+        "raw_re_evidence": raw_re_evidence,
+        "evaluated_re_evidence": evaluated_re_evidence,
         "global_re": global_re,
         "plate_value": pair_result,
         "stages": {
